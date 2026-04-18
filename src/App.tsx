@@ -683,10 +683,13 @@ export default function App() {
     if (!calculateSubjectDetailedStats) return;
     setLoadingAssessment(true);
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env.GEMINI_API_KEY as string);
+      // @ts-ignore - Vite env variables
+      const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+      
       if (!apiKey || apiKey === "undefined") {
         throw new Error("API Key chưa được cấu hình. Vui lòng kiểm tra VITE_GEMINI_API_KEY trong Environment Variables.");
       }
+
       const ai = new GoogleGenAI({ apiKey });
       const data = calculateSubjectDetailedStats;
       const prompt = `Bạn là chuyên gia phân tích dữ liệu giáo dục Việt Nam. Hãy đưa ra phân tích ngắn gọn về kết quả thi môn ${data.subject} dựa trên các số liệu sau:
@@ -705,14 +708,16 @@ export default function App() {
       6. KHÔNG đánh giá chất lượng dạy học, KHÔNG đưa ra lời khuyên, KHÔNG kết luận.
       7. Chỉ tập trung mô tả "bức tranh" điểm số một cách sinh động theo ngôn ngữ chuyên môn giáo dục phổ thông.`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
+      // Cập nhật lại model tiêu chuẩn hơn
+      const result = await (ai as any).models.generateContent({
+        model: "gemini-1.5-flash", 
+        contents: [{ role: "user", parts: [{ text: prompt }] }]
       });
+
       setAssessment(result.text || "Không thể tạo đánh giá lúc này.");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setAssessment("Lỗi khi kết nối với AI để tạo đánh giá.");
+      setAssessment(`Lỗi kết nối AI: ${error.message || "Kiểm tra lại khóa API hoặc kết nối mạng."}`);
     } finally {
       setLoadingAssessment(false);
     }
