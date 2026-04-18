@@ -678,49 +678,47 @@ export default function App() {
     };
   }, [selectedClass, students]);
 
-  // AI Assessment Generator
+  // AI Assessment Generator - Corrected SDK usage
   const generateAIAnalysis = async () => {
     if (!calculateSubjectDetailedStats) return;
     setLoadingAssessment(true);
+    setAssessment("");
+    
     try {
-      // @ts-ignore
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+      // Accessing API Key as per platform guidelines
+      const apiKey = process.env.GEMINI_API_KEY;
       
-      if (!apiKey || apiKey === "undefined") {
-        throw new Error("API Key chưa được cấu hình.");
+      if (!apiKey) {
+        throw new Error("Khóa API chưa được cấu hình.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
       const data = calculateSubjectDetailedStats;
-      const prompt = `Bạn là chuyên gia phân tích dữ liệu giáo dục Việt Nam. Hãy đưa ra phân tích ngắn gọn về kết quả thi môn ${data.subject} dựa trên các số liệu sau:
-      - Tổng dự thi (điểm > 0): ${data.total}
-      - Điểm trung bình: ${data.advanced.avg}
-      - Trung vị: ${data.advanced.median}
-      - Độ lệch chuẩn: ${data.advanced.stdDev}
-      - Tỷ lệ trên trung bình (>=5): ${data.metrics.aboveAvgRate.toFixed(1)}%
+      const prompt = `Bạn là chuyên gia khảo thí. Hãy nhận xét ngắn (3 câu) về phổ điểm môn ${data.subject}:
+      - TB: ${data.advanced.avg}, Trung vị: ${data.advanced.median}, Độ lệch chuẩn: ${data.advanced.stdDev}.
+      - Tỷ lệ trên TB: ${data.metrics.aboveAvgRate.toFixed(1)}%.
       
-      Yêu cầu NGHIÊM NGẶT:
-      1. CHỈ phân tích về Phổ điểm và Hình dáng Phân phối.
-      2. Sử dụng ngôn ngữ đại chúng, phổ thông, gần gũi trong ngành giáo dục.
-      3. Nội dung cực kỳ ngắn gọn (3-5 câu), trình bày thành một đoạn văn duy nhất.
-      4. Tuyệt đối KHÔNG sử dụng ký hiệu dấu sao, thăng, gạch đầu dòng, markdown.
-      5. KHÔNG sử dụng định dạng in đậm/in nghiêng.
-      6. KHÔNG đánh giá chất lượng dạy học, KHÔNG đưa ra lời khuyên.`;
+      Yêu cầu:
+      1. Nhận xét về độ khó đề thi và tính phân hóa của phổ điểm.
+      2. Ngôn ngữ giáo dục phổ thông, dễ hiểu, tích cực.
+      3. Không dùng markdown (*), không viết hoa toàn bộ, không liệt kê.`;
 
-      // Sử dụng model ổn định nhất để tránh lỗi 403/404
+      // CRITICAL: Using the correct method from @google/genai SDK
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash-latest",
-        contents: prompt
+        model: "gemini-3-flash-preview",
+        contents: prompt,
       });
 
-      setAssessment(response.text || "Không thể tạo đánh giá lúc này.");
-    } catch (error: any) {
-      console.error("AI Error:", error);
-      let errorMsg = error.message || "Kiểm tra lại khóa API hoặc kết nối mạng.";
-      if (errorMsg.includes("403")) {
-        errorMsg = "Quyền truy cập bị từ chối (403). Hãy thử tạo một API Key mới trong một Project mới trên Google AI Studio.";
+      if (response && response.text) {
+        // Cleaning potential markdown artifacts
+        setAssessment(response.text.replace(/[\*\#\@]/g, '').trim());
+      } else {
+        setAssessment("AI đang bận, vui lòng thử lại sau.");
       }
-      setAssessment(`Lỗi kết nối AI: ${errorMsg}`);
+
+    } catch (error: any) {
+      console.error("Gemini SDK Error:", error);
+      setAssessment("Kết nối AI tạm gián đoạn. Bạn có thể xem Phân tích toán học bên trên.");
     } finally {
       setLoadingAssessment(false);
     }
@@ -728,11 +726,11 @@ export default function App() {
 
   useEffect(() => {
     if (selectedSubject) {
-      setAssessment("");
-      // Automatically trigger analysis
       generateAIAnalysis();
     }
   }, [selectedSubject]);
+
+   // Auth Logic
 
   const calculateRewardsList = useMemo(() => {
     if (students.length === 0) return [];
@@ -1792,16 +1790,46 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* AI Assessment */}
+                  {/* Analysis Section */}
                   <div className="bg-bento-card border border-bento-border rounded-2xl p-8 overflow-hidden relative">
                     <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-xl font-black text-bento-text uppercase tracking-tight flex items-center gap-2">
-                         ĐÁNH GIÁ CHUNG
+                      <h3 className="text-xl font-black text-bento-text uppercase tracking-tight flex items-center gap-2 underline decoration-bento-accent decoration-4 underline-offset-8">
+                         NHẬN XÉT CHI KIẾN 
                       </h3>
                     </div>
                     
-                    <div className="text-bento-text leading-relaxed font-bold bg-slate-50/50 p-6 rounded-xl border border-bento-border/50 text-sm min-h-[100px] flex items-center">
-                      {assessment || "Đang chờ dữ liệu phân tích..."}
+                    <div className="space-y-6">
+                      {/* Mathematical Analysis */}
+                      <div className="bg-slate-50 border-l-8 border-emerald-500 p-8 rounded-2xl text-[15px] leading-relaxed italic text-slate-700 shadow-inner">
+                        <div className="flex items-start gap-4">
+                          <div className="p-2 bg-emerald-100 rounded-lg mt-1">
+                            <CheckCircle2 size={20} className="text-emerald-600" />
+                          </div>
+                          <div>
+                            <span className="font-black text-slate-900 not-italic uppercase tracking-tighter mr-2 block mb-2 underline">Phân tích toán học:</span>
+                            Môn {calculateSubjectDetailedStats.subject} có điểm trung bình là <span className="text-emerald-700 font-black">{calculateSubjectDetailedStats.advanced.avg}</span>, 
+                            {parseFloat(calculateSubjectDetailedStats.advanced.avg) >= 5 ? ' phản ánh mặt bằng chung đạt mức đạt yêu cầu trở lên. ' : ' cho thấy đề thi có độ khó cao hoặc học sinh làm bài chưa tốt. '}
+                            {parseFloat(calculateSubjectDetailedStats.advanced.stdDev) > 1.8 ? ' Phổ điểm có độ phân hóa mạnh, trình độ thí sinh chênh lệch khá lớn.' : ' Điểm số khá tập trung, trình độ thí sinh có sự đồng đều khá cao.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Assessment */}
+                      <div className="bg-indigo-50 border-l-8 border-indigo-500 p-8 rounded-2xl text-[15px] leading-relaxed italic text-indigo-900 shadow-sm">
+                        <div className="flex items-start gap-4">
+                          <div className="p-2 bg-indigo-100 rounded-lg mt-1">
+                            <BookOpen size={20} className="text-indigo-600" />
+                          </div>
+                          <div>
+                            <span className="font-black text-indigo-900 not-italic uppercase tracking-tighter mr-2 block mb-2 underline">Nhận xét từ AI:</span>
+                            {loadingAssessment ? (
+                              <span className="animate-pulse">Chuyên gia AI đang phân tích phổ điểm...</span>
+                            ) : (
+                              <span>{assessment || "Đang tổng hợp dữ liệu nhận xét..."}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
