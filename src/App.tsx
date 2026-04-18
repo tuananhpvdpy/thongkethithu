@@ -710,7 +710,7 @@ export default function App() {
 
       // Cập nhật lại model tiêu chuẩn hơn
       const result = await (ai as any).models.generateContent({
-        model: "gemini-1.5-flash", 
+        model: "models/gemini-1.5-flash", 
         contents: [{ role: "user", parts: [{ text: prompt }] }]
       });
 
