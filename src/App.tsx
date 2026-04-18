@@ -683,11 +683,12 @@ export default function App() {
     if (!calculateSubjectDetailedStats) return;
     setLoadingAssessment(true);
     try {
-      // @ts-ignore - Vite env variables
-      const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+      // Ưu tiên lấy từ Vercel Env (VITE_), nếu không có thì lấy từ process.env (AI Studio)
+      // @ts-ignore
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
       
       if (!apiKey || apiKey === "undefined") {
-        throw new Error("API Key chưa được cấu hình. Vui lòng kiểm tra VITE_GEMINI_API_KEY trong Environment Variables.");
+        throw new Error("API Key chưa được cấu hình. Vui lòng kiểm tra VITE_GEMINI_API_KEY trong Environment Variables trên Vercel.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -708,16 +709,20 @@ export default function App() {
       6. KHÔNG đánh giá chất lượng dạy học, KHÔNG đưa ra lời khuyên, KHÔNG kết luận.
       7. Chỉ tập trung mô tả "bức tranh" điểm số một cách sinh động theo ngôn ngữ chuyên môn giáo dục phổ thông.`;
 
-      // Cập nhật lại model tiêu chuẩn hơn
-      const result = await (ai as any).models.generateContent({
-        model: "models/gemini-1.5-flash", 
-        contents: [{ role: "user", parts: [{ text: prompt }] }]
+      // Sử dụng model gemini-3-flash-preview theo khuyến nghị mới nhất
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
       });
 
-      setAssessment(result.text || "Không thể tạo đánh giá lúc này.");
+      setAssessment(response.text || "Không thể tạo đánh giá lúc này.");
     } catch (error: any) {
-      console.error(error);
-      setAssessment(`Lỗi kết nối AI: ${error.message || "Kiểm tra lại khóa API hoặc kết nối mạng."}`);
+      console.error("AI Error:", error);
+      let errorMsg = error.message || "Kiểm tra lại khóa API hoặc kết nối mạng.";
+      if (errorMsg.includes("404")) {
+        errorMsg = "Không tìm thấy model AI. Có thể API Key này chưa được cấp quyền dùng model 3-flash. Hãy kiểm tra lại vùng quốc gia.";
+      }
+      setAssessment(`Lỗi kết nối AI: ${errorMsg}`);
     } finally {
       setLoadingAssessment(false);
     }
