@@ -685,11 +685,12 @@ export default function App() {
     setAssessment("");
     
     try {
-      // Accessing API Key as per platform guidelines
-      const apiKey = process.env.GEMINI_API_KEY;
+      // Resilient API Key detection for Vercel/Vite environments
+      // @ts-ignore
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
       
-      if (!apiKey) {
-        throw new Error("Khóa API chưa được cấu hình.");
+      if (!apiKey || apiKey === "undefined") {
+        throw new Error("Khóa API chưa được cấu hình trên Vercel (Environment Variables).");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -703,14 +704,12 @@ export default function App() {
       2. Ngôn ngữ giáo dục phổ thông, dễ hiểu, tích cực.
       3. Không dùng markdown (*), không viết hoa toàn bộ, không liệt kê.`;
 
-      // CRITICAL: Using the correct method from @google/genai SDK
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
       });
 
       if (response && response.text) {
-        // Cleaning potential markdown artifacts
         setAssessment(response.text.replace(/[\*\#\@]/g, '').trim());
       } else {
         setAssessment("AI đang bận, vui lòng thử lại sau.");
@@ -718,7 +717,15 @@ export default function App() {
 
     } catch (error: any) {
       console.error("Gemini SDK Error:", error);
-      setAssessment("Kết nối AI tạm gián đoạn. Bạn có thể xem Phân tích toán học bên trên.");
+      let msg = "Kết nối AI tạm gián đoạn.";
+      if (error.message?.includes("403")) {
+        msg = "⚠️ Lỗi 403 (Permission Denied): Project của bạn chưa bật 'Generative Language API' hoặc API Key bị chặn. Hãy thử dùng một tài khoản Gmail khác để tạo Key mới trong NEW Project, sau đó cập nhật lên Vercel.";
+      } else if (error.message?.includes("404")) {
+        msg = "⚠️ Lỗi 404 (Not Found): Hệ thống đang điều chỉnh model AI. Vui lòng thử lại sau giây lát.";
+      } else if (error.message?.includes("API Key")) {
+        msg = "⚠️ Thiếu API Key: Hãy kiểm tra cấu hình GEMINI_API_KEY trên Vercel và thực hiện Redeploy.";
+      }
+      setAssessment(msg);
     } finally {
       setLoadingAssessment(false);
     }
