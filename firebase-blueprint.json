@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Thông tin học sinh và điểm thi",
+      "type": "object",
+      "properties": {
+        "sbd": { "type": "string", "description": "Số báo danh" },
+        "name": { "type": "string", "description": "Họ và tên" },
+        "class": { "type": "string", "description": "Lớp" },
+        "scores": {
+          "type": "object",
+          "description": "Điểm các môn thi"
+        },
+        "total": { "type": "number", "description": "Tổng điểm" },
+        "importedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sbd", "name", "class", "scores"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Cấu hình ứng dụng",
+      "type": "object",
+      "properties": {
+        "hasData": { "type": "boolean" },
+        "lastImport": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "students": {
+      "schema": "Student",
+      "description": "Danh sách học sinh và điểm thi"
+    },
+    "config": {
+      "schema": "AppConfig",
+      "description": "Cấu hình hệ thống"
+    }
+  }
+}
