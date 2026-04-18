@@ -683,12 +683,11 @@ export default function App() {
     if (!calculateSubjectDetailedStats) return;
     setLoadingAssessment(true);
     try {
-      // Ưu tiên lấy từ Vercel Env (VITE_), nếu không có thì lấy từ process.env (AI Studio)
       // @ts-ignore
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
       
       if (!apiKey || apiKey === "undefined") {
-        throw new Error("API Key chưa được cấu hình. Vui lòng kiểm tra VITE_GEMINI_API_KEY trong Environment Variables trên Vercel.");
+        throw new Error("API Key chưa được cấu hình.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -701,17 +700,16 @@ export default function App() {
       - Tỷ lệ trên trung bình (>=5): ${data.metrics.aboveAvgRate.toFixed(1)}%
       
       Yêu cầu NGHIÊM NGẶT:
-      1. CHỈ phân tích về Phổ điểm và Hình dáng Phân phối (ví dụ: phổ điểm có hình chuông, đỉnh lệch về phía điểm nào, sự phân hóa ra sao).
-      2. Sử dụng ngôn ngữ đại chúng, phổ thông, gần gũi trong ngành giáo dục (ví dụ: "phổ điểm đẹp", "phân hóa tốt", "đỉnh rơi vào vùng điểm...", "phân khúc điểm khá", "vùng điểm trung bình...", "rốn điểm", "đỉnh điểm tập trung ở..."). Tránh dùng từ quá hàn lâm như "phân phối chuẩn hóa", "phương sai".
+      1. CHỈ phân tích về Phổ điểm và Hình dáng Phân phối.
+      2. Sử dụng ngôn ngữ đại chúng, phổ thông, gần gũi trong ngành giáo dục.
       3. Nội dung cực kỳ ngắn gọn (3-5 câu), trình bày thành một đoạn văn duy nhất.
-      4. Tuyệt đối KHÔNG sử dụng ký hiệu dấu sao (*), ký hiệu thăng (#), hay các gạch đầu dòng, dấu chấm tròn, markdown.
+      4. Tuyệt đối KHÔNG sử dụng ký hiệu dấu sao, thăng, gạch đầu dòng, markdown.
       5. KHÔNG sử dụng định dạng in đậm/in nghiêng.
-      6. KHÔNG đánh giá chất lượng dạy học, KHÔNG đưa ra lời khuyên, KHÔNG kết luận.
-      7. Chỉ tập trung mô tả "bức tranh" điểm số một cách sinh động theo ngôn ngữ chuyên môn giáo dục phổ thông.`;
+      6. KHÔNG đánh giá chất lượng dạy học, KHÔNG đưa ra lời khuyên.`;
 
-      // Sử dụng model gemini-3-flash-preview theo khuyến nghị mới nhất
+      // Sử dụng model ổn định nhất để tránh lỗi 403/404
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash-latest",
         contents: prompt
       });
 
@@ -719,8 +717,8 @@ export default function App() {
     } catch (error: any) {
       console.error("AI Error:", error);
       let errorMsg = error.message || "Kiểm tra lại khóa API hoặc kết nối mạng.";
-      if (errorMsg.includes("404")) {
-        errorMsg = "Không tìm thấy model AI. Có thể API Key này chưa được cấp quyền dùng model 3-flash. Hãy kiểm tra lại vùng quốc gia.";
+      if (errorMsg.includes("403")) {
+        errorMsg = "Quyền truy cập bị từ chối (403). Hãy thử tạo một API Key mới trong một Project mới trên Google AI Studio.";
       }
       setAssessment(`Lỗi kết nối AI: ${errorMsg}`);
     } finally {
@@ -2465,17 +2463,16 @@ export default function App() {
 
                                 // Generate non-academic assessment
                                 const getAssessment = () => {
+                                  if (selectedSchoolIdx === -1 || !groupData) return null;
                                   const schoolName = groupData.schools[selectedSchoolIdx];
                                   if (!schoolName || schoolName === 'PVĐ') return null;
 
                                   const cAvg = parseFloat(currentStats.avg);
                                   const pAvg = parseFloat(pvdStats.avg);
-                                  const cMed = parseFloat(currentStats.median);
-                                  const pMed = parseFloat(pvdStats.median);
                                   const cStd = parseFloat(currentStats.stdDev);
                                   const pStd = parseFloat(pvdStats.stdDev);
 
-                                  if (isNaN(cAvg) || isNaN(pAvg)) return null;
+                                  if (isNaN(cAvg) || isNaN(pAvg) || currentInfo.total === 0 || pvdInfo.total === 0) return null;
 
                                   let text = "";
                                   const diff = cAvg - pAvg;
