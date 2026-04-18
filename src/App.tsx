@@ -683,7 +683,11 @@ export default function App() {
     if (!calculateSubjectDetailedStats) return;
     setLoadingAssessment(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env.GEMINI_API_KEY as string);
+      if (!apiKey || apiKey === "undefined") {
+        throw new Error("API Key chưa được cấu hình. Vui lòng kiểm tra VITE_GEMINI_API_KEY trong Environment Variables.");
+      }
+      const ai = new GoogleGenAI({ apiKey });
       const data = calculateSubjectDetailedStats;
       const prompt = `Bạn là chuyên gia phân tích dữ liệu giáo dục Việt Nam. Hãy đưa ra phân tích ngắn gọn về kết quả thi môn ${data.subject} dựa trên các số liệu sau:
       - Tổng dự thi (điểm > 0): ${data.total}
