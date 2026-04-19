@@ -32,6 +32,9 @@ interface Student {
 interface AppConfig {
   hasData: boolean;
   lastImport: string | null;
+  examSession?: number;
+  comparisonSessions?: number[];
+  allowGroupComparison?: boolean;
 }
 
 const ADMIN_CODE = "487060";
@@ -82,7 +85,13 @@ export default function App() {
   const [role, setRole] = useState<'admin' | 'viewer' | null>(null);
   const [activeTab, setActiveTab] = useState<string>("data");
   const [students, setStudents] = useState<Student[]>([]);
-  const [config, setConfig] = useState<AppConfig>({ hasData: false, lastImport: null });
+  const [config, setConfig] = useState<AppConfig>({ 
+    hasData: false, 
+    lastImport: null,
+    examSession: 1,
+    comparisonSessions: [1, 2],
+    allowGroupComparison: false
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [importing, setImporting] = useState<boolean>(false);
   const [tempData, setTempData] = useState<Student[]>([]);
@@ -92,6 +101,12 @@ export default function App() {
   const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
   const [rewardsState, setRewardsState] = useState<Record<string, { amount: number, selected: boolean }>>({});
   const [savingRewards, setSavingRewards] = useState<boolean>(false);
+  const [settingsForm, setSettingsForm] = useState({
+    examSession: 1,
+    comparisonSessions: [1, 2],
+    allowGroupComparison: false
+  });
+  const [savingSettings, setSavingSettings] = useState<boolean>(false);
 
   // Group Comparison state
   const [groupData, setGroupData] = useState<{ 
@@ -213,10 +228,22 @@ export default function App() {
     // Fetch config and data
     const unsubscribeConfig = onSnapshot(doc(db, "config", "app"), (snapshot) => {
       if (snapshot.exists()) {
-        setConfig(snapshot.data() as AppConfig);
+        const data = snapshot.data() as AppConfig;
+        setConfig(data);
+        setSettingsForm({
+          examSession: data.examSession || 1,
+          comparisonSessions: data.comparisonSessions || [1, 2],
+          allowGroupComparison: data.allowGroupComparison || false
+        });
       } else {
         // Initialize config if not exists
-        setDoc(doc(db, "config", "app"), { hasData: false, lastImport: null });
+        setDoc(doc(db, "config", "app"), { 
+          hasData: false, 
+          lastImport: null,
+          examSession: 1,
+          comparisonSessions: [1, 2],
+          allowGroupComparison: false
+        });
       }
     });
 
@@ -1125,6 +1152,32 @@ export default function App() {
     }
   };
 
+  const toggleGroupVisibility = async (val: boolean) => {
+    // Deprecated for new settings tab
+  };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      if (settingsForm.comparisonSessions.length !== 2) {
+        alert("Vui lòng chọn chính xác 2 lần để so sánh!");
+        return;
+      }
+      await setDoc(doc(db, "config", "app"), {
+        ...config,
+        examSession: settingsForm.examSession,
+        comparisonSessions: settingsForm.comparisonSessions,
+        allowGroupComparison: settingsForm.allowGroupComparison
+      });
+      alert("Lưu cấu hình thành công!");
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi khi lưu cấu hình!");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   if (!isAuthorized) {
     return (
       <div className="min-h-screen bg-bento-bg flex items-center justify-center p-4">
@@ -1159,7 +1212,7 @@ export default function App() {
           </form>
 
           <div className="mt-10 pt-6 border-t border-bento-border/50">
-            <p className="text-[10px] text-bento-subtext uppercase tracking-widest font-black">THIẾT KẾ BỞI: <span className="text-blue-600">TRẦN TUẤN ANH</span></p>
+            <p className="text-[11px] text-bento-subtext uppercase tracking-widest font-black">THIẾT KẾ BỞI: <span className="text-blue-600">TRẦN TUẤN ANH</span></p>
           </div>
         </motion.div>
       </div>
@@ -1171,7 +1224,7 @@ export default function App() {
       {/* Sidebar */}
       <aside className="w-full md:w-[260px] bg-bento-card border-r border-bento-border flex flex-col h-screen sticky top-0">
         <div className="p-8">
-          <div className="text-[12px] font-black text-bento-accent tracking-tighter uppercase leading-tight">
+          <div className="text-[13px] font-black text-bento-accent tracking-tighter uppercase leading-tight">
             📊 THỐNG KÊ THI THỬ<br />
             TỐT NGHIỆP THPT
           </div>
@@ -1180,14 +1233,28 @@ export default function App() {
         <nav className="flex-1 px-4 space-y-1">
           {role === 'admin' ? (
             <NavItem 
+              active={activeTab === "settings"} 
+              onClick={() => setActiveTab("settings")}
+              icon={<Settings size={18} />}
+              label="CẤU HÌNH"
+            />
+          ) : (
+            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[12px] uppercase tracking-widest cursor-not-allowed">
+              <Settings size={18} />
+              <span>CẤU HÌNH</span>
+            </div>
+          )}
+
+          {role === 'admin' ? (
+            <NavItem 
               active={activeTab === "data"} 
               onClick={() => setActiveTab("data")}
-              icon={<Settings size={18} />}
+              icon={<FileSpreadsheet size={18} />}
               label="DỮ LIỆU"
             />
           ) : (
-            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[11px] uppercase tracking-widest cursor-not-allowed">
-              <Settings size={18} />
+            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[12px] uppercase tracking-widest cursor-not-allowed">
+              <FileSpreadsheet size={18} />
               <span>DỮ LIỆU</span>
             </div>
           )}
@@ -1200,7 +1267,7 @@ export default function App() {
               label="KHEN THƯỞNG"
             />
           ) : (
-            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[11px] uppercase tracking-widest cursor-not-allowed">
+            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[12px] uppercase tracking-widest cursor-not-allowed">
               <Trophy size={18} />
               <span>KHEN THƯỞNG</span>
             </div>
@@ -1227,12 +1294,19 @@ export default function App() {
             label="THỐNG KÊ LỚP"
           />
 
-          <NavItem 
-            active={activeTab === "history"} 
-            onClick={() => setActiveTab("history")}
-            icon={<BarChart3 size={18} />}
-            label="SO SÁNH LẦN TRƯỚC"
-          />
+          {config.examSession !== 1 ? (
+            <NavItem 
+              active={activeTab === "history"} 
+              onClick={() => setActiveTab("history")}
+              icon={<BarChart3 size={18} />}
+              label="SO SÁNH LẦN TRƯỚC"
+            />
+          ) : (
+            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[12px] uppercase tracking-widest cursor-not-allowed">
+              <BarChart3 size={18} />
+              <span>SO SÁNH LẦN TRƯỚC</span>
+            </div>
+          )}
 
           <NavItem 
             active={activeTab === "compare"} 
@@ -1243,13 +1317,13 @@ export default function App() {
         </nav>
 
         <div className="p-8 mt-auto flex flex-col gap-4">
-          <div className="text-[10px] text-bento-subtext uppercase tracking-widest font-black">
+          <div className="text-[11px] text-bento-subtext uppercase tracking-widest font-black">
             THIẾT KẾ BỞI:<br />
             <span className="text-blue-600">TRẦN TUẤN ANH</span>
           </div>
           <button 
             onClick={handleLogout}
-            className="flex items-center gap-3 w-full px-5 py-3.5 text-bento-subtext hover:bg-bento-danger/10 hover:text-bento-danger rounded-xl transition-all font-bold text-[10px] uppercase tracking-widest"
+            className="flex items-center gap-3 w-full px-5 py-3.5 text-bento-subtext hover:bg-bento-danger/10 hover:text-bento-danger rounded-xl transition-all font-bold text-[11px] uppercase tracking-widest"
           >
             <LogOut size={16} />
             <span>Đăng xuất</span>
@@ -1262,28 +1336,129 @@ export default function App() {
         {/* Header Bar */}
         <header className="md:col-span-4 flex items-center justify-between mb-4">
           <h2 className="text-xl font-black text-bento-text tracking-tighter uppercase">
+            {activeTab === "settings" && "Cấu Hình Hệ Thống"}
             {activeTab === "data" && "Trung Tâm Quản Lý Dữ Liệu"}
             {activeTab === "rewards" && "Quản Lý Khen Thưởng"}
             {activeTab === "school" && "Thống Kê Toàn Trường"}
             {activeTab === "subject" && "Thống Kê Theo Môn Học"}
             {activeTab === "class" && "Thống Kê Theo Lớp"}
-            {activeTab === "history" && "So Sánh Kết Quả Lần 1 & 2"}
+            {activeTab === "history" && `So Sánh Lần ${config.comparisonSessions?.[0] || 1} & ${config.comparisonSessions?.[1] || 2}`}
             {activeTab === "compare" && "So Sánh Cụm Chuyên Môn"}
           </h2>
 
           <div className="flex gap-3 items-center">
             {config.hasData && (
-              <div className="bg-bento-success/10 text-bento-success px-4 py-1.5 rounded-full text-[10px] font-black border border-bento-success/30 uppercase tracking-widest">
+              <div className="bg-bento-success/10 text-bento-success px-4 py-1.5 rounded-full text-[11px] font-black border border-bento-success/30 uppercase tracking-widest">
                 ĐÃ CÓ ĐIỂM
               </div>
             )}
-            <div className="bg-bento-accent/10 text-bento-accent px-4 py-1.5 rounded-full text-[10px] font-black border border-bento-accent/30 uppercase tracking-widest">
+            <div className="bg-bento-accent/10 text-bento-accent px-4 py-1.5 rounded-full text-[11px] font-black border border-bento-accent/30 uppercase tracking-widest">
               ● {role === 'admin' ? "Quyền Quản Trị Hệ Thống" : "Quyền Người Xem"}
             </div>
           </div>
         </header>
 
         <AnimatePresence mode="wait">
+          {activeTab === "settings" && role === 'admin' && (
+            <motion.div 
+              key="settings"
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              className="col-span-1 md:col-span-4 bg-bento-card border border-bento-border rounded-2xl p-8 flex flex-col gap-8 shadow-sm"
+            >
+              <div className="border-b border-bento-border pb-4">
+                <h3 className="text-xl font-black text-bento-text uppercase tracking-tight">Cấu hình hệ thống</h3>
+                <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest mt-1">Thiết lập các tham số hiển thị và so sánh</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                {/* Session Choice */}
+                <div className="space-y-4">
+                  <label className="text-[11px] font-black text-bento-subtext uppercase tracking-widest border-l-4 border-indigo-600 pl-3">1. Thống kê thi thử lần thứ:</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={settingsForm.examSession}
+                    onChange={(e) => setSettingsForm({...settingsForm, examSession: parseInt(e.target.value) || 1})}
+                    className="w-full max-w-xs px-6 py-4 rounded-xl bg-slate-50 border border-bento-border focus:ring-2 focus:ring-bento-accent/50 outline-none font-black text-lg transition-all"
+                  />
+                  <p className="text-[10px] text-slate-400 font-bold uppercase italic">* Nếu là lần 1, menu SO SÁNH LẦN TRƯỚC sẽ tự động ẩn.</p>
+                </div>
+
+                {/* Comparison Choice */}
+                <div className="space-y-4">
+                  <label className="text-[11px] font-black text-bento-subtext uppercase tracking-widest border-l-4 border-indigo-600 pl-3">2. Cho phép so sánh giữa các lần:</label>
+                  <div className="flex gap-4">
+                    {[1, 2, 3, 4].map(num => (
+                      <label key={num} className={cn(
+                        "flex flex-col items-center justify-center w-16 h-16 rounded-xl border-2 cursor-pointer transition-all gap-1",
+                        settingsForm.comparisonSessions.includes(num)
+                          ? "bg-bento-accent/10 border-bento-accent text-bento-accent shadow-md"
+                          : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                      )}>
+                        <input 
+                          type="checkbox"
+                          className="hidden"
+                          checked={settingsForm.comparisonSessions.includes(num)}
+                          onChange={() => {
+                            const current = settingsForm.comparisonSessions;
+                            if (current.includes(num)) {
+                              setSettingsForm({...settingsForm, comparisonSessions: current.filter(n => n !== num)});
+                            } else {
+                              if (current.length < 2) {
+                                setSettingsForm({...settingsForm, comparisonSessions: [...current, num].sort()});
+                              } else {
+                                // If already 2, replace the last one or do nothing? User said "chọn 2 trong số 4"
+                                setSettingsForm({...settingsForm, comparisonSessions: [current[1], num].sort()});
+                              }
+                            }
+                          }}
+                        />
+                        <span className="text-xl font-black">{num}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-tighter">Lần</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase italic">* Vui lòng chọn đúng 2 lần thi để đối chiếu (VD: 1 & 2).</p>
+                </div>
+
+                {/* Group Comparison Choice */}
+                <div className="space-y-4">
+                  <label className="text-[11px] font-black text-bento-subtext uppercase tracking-widest border-l-4 border-indigo-600 pl-3">3. Cho phép so sánh với Cụm chuyên môn:</label>
+                  <div className="flex gap-4">
+                    {[
+                      { label: "CÓ", value: true, color: "emerald" },
+                      { label: "KHÔNG", value: false, color: "slate" }
+                    ].map(opt => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setSettingsForm({...settingsForm, allowGroupComparison: opt.value})}
+                        className={cn(
+                          "px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all border-2",
+                          settingsForm.allowGroupComparison === opt.value
+                            ? (opt.value ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-600/20" : "bg-slate-800 border-slate-800 text-white shadow-lg shadow-slate-800/20")
+                            : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase italic">* Nếu chọn KHÔNG, người dùng sẽ thấy thông báo chưa có thông tin cụm.</p>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-bento-border flex justify-start">
+                <button 
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-10 py-4 rounded-xl transition-all shadow-xl shadow-indigo-600/20 uppercase tracking-widest text-sm flex items-center gap-3 disabled:opacity-50"
+                >
+                  {savingSettings ? "ĐANG LƯU..." : "💾 LƯU CẤU HÌNH"}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === "data" && role === 'admin' && (
             <motion.div 
               key="data"
@@ -1292,11 +1467,11 @@ export default function App() {
             >
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                  <div className="text-[10px] font-black text-bento-subtext uppercase tracking-widest mb-2">Quản Lý Nhập Dữ Liệu</div>
+                  <div className="text-[11px] font-black text-bento-subtext uppercase tracking-widest mb-2">Quản Lý Nhập Dữ Liệu</div>
                   <h3 className="text-xl font-black text-bento-text uppercase tracking-tight">Cấu hình nguồn dữ liệu</h3>
                 </div>
                 <div className="flex gap-3">
-                  <label className="cursor-pointer bg-bento-bg hover:bg-bento-border/20 text-bento-text font-black px-5 py-2.5 rounded-xl border border-bento-border transition-all flex items-center gap-3 text-[10px] uppercase tracking-widest">
+                  <label className="cursor-pointer bg-bento-bg hover:bg-bento-border/20 text-bento-text font-black px-5 py-2.5 rounded-xl border border-bento-border transition-all flex items-center gap-3 text-[11px] uppercase tracking-widest">
                     <Upload size={16} />
                     📂 IMPORT FILE
                     <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
@@ -1306,7 +1481,7 @@ export default function App() {
                     onClick={handleUpdateData}
                     disabled={tempData.length === 0 || importing}
                     className={cn(
-                      "font-black px-5 py-2.5 rounded-xl transition-all flex items-center gap-3 text-[10px] uppercase tracking-widest",
+                      "font-black px-5 py-2.5 rounded-xl transition-all flex items-center gap-3 text-[11px] uppercase tracking-widest",
                       tempData.length > 0 ? "bg-bento-accent text-white shadow-lg shadow-bento-accent/20" : "bg-bento-bg text-bento-subtext border border-bento-border/50 cursor-not-allowed"
                     )}
                   >
@@ -1400,9 +1575,9 @@ export default function App() {
 
               <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[13px]">
+                  <table className="w-full text-left text-[14px]">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-bento-border text-[11px]">
+                      <tr className="bg-slate-50 border-b border-bento-border text-[12px]">
                         <th className="px-6 py-4 font-black text-bento-subtext text-center w-16 border-r border-bento-border">TT</th>
                         <th className="px-6 py-4 font-black text-bento-subtext border-r border-bento-border">SBD</th>
                         <th className="px-6 py-4 font-black text-bento-subtext border-r border-bento-border">HỌ VÀ TÊN</th>
@@ -1486,26 +1661,26 @@ export default function App() {
             >
               <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div className="bg-bento-card border border-bento-border p-5 rounded-2xl">
-                  <p className="text-[10px] font-black text-bento-subtext uppercase tracking-widest mb-1">Đăng ký dự thi</p>
+                  <p className="text-[11px] font-black text-bento-subtext uppercase tracking-widest mb-1">Đăng ký dự thi</p>
                   <p className="text-3xl font-black text-bento-text">{stats.totalStudents}</p>
                 </div>
                 <div className="bg-bento-card border border-bento-border p-5 rounded-2xl">
-                  <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Tham gia dự thi</p>
+                  <p className="text-[11px] font-black text-green-600 uppercase tracking-widest mb-1">Tham gia dự thi</p>
                   <p className="text-3xl font-black text-green-600">{stats.participatedCount}</p>
                 </div>
                 <div className="bg-bento-card border border-bento-border p-5 rounded-2xl">
-                  <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1">Vắng thi (X)</p>
+                  <p className="text-[11px] font-black text-red-600 uppercase tracking-widest mb-1">Vắng thi (X)</p>
                   <p className="text-3xl font-black text-red-600">{stats.absentCount}</p>
                 </div>
                 <div className="bg-bento-card border border-bento-border p-5 rounded-2xl">
-                  <p className="text-[10px] font-black text-bento-accent uppercase tracking-widest mb-1">Đậu tốt nghiệp (Đ)</p>
+                  <p className="text-[11px] font-black text-bento-accent uppercase tracking-widest mb-1">Đậu tốt nghiệp (Đ)</p>
                   <div className="flex items-baseline gap-2">
                     <p className="text-3xl font-black text-bento-accent">{stats.passedList.length}</p>
                     <p className="text-sm font-black text-bento-subtext">({stats.passRate.toFixed(1)}%)</p>
                   </div>
                 </div>
                 <div className="bg-bento-card border border-bento-border p-5 rounded-2xl">
-                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Hỏng tốt nghiệp (H)</p>
+                  <p className="text-[11px] font-black text-orange-600 uppercase tracking-widest mb-1">Hỏng tốt nghiệp (H)</p>
                   <div className="flex items-baseline gap-2">
                     <p className="text-3xl font-black text-orange-600">{stats.failedList.length}</p>
                     <p className="text-sm font-black text-bento-subtext">({stats.failRate.toFixed(1)}%)</p>
@@ -1517,12 +1692,12 @@ export default function App() {
                 {/* Absent List */}
                 <div className="lg:col-span-2 bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm">
                   <div className="bg-red-50 px-6 py-4 border-b border-bento-border">
-                    <h3 className="text-[11px] font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
+                    <h3 className="text-[12px] font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                       <AlertCircle size={14} /> Danh sách vắng thi
                     </h3>
                   </div>
                   <div className="overflow-auto max-h-[400px]">
-                    <table className="w-full text-left text-[13px]">
+                    <table className="w-full text-left text-[14px]">
                       <thead className="bg-bento-table-header sticky top-0 border-b border-bento-border">
                         <tr>
                           <th className="px-4 py-4 font-black text-bento-text w-20">SBD</th>
@@ -1548,12 +1723,12 @@ export default function App() {
                 {/* Failed List */}
                 <div className="lg:col-span-3 bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm">
                   <div className="bg-orange-50 px-6 py-4 border-b border-bento-border">
-                    <h3 className="text-[11px] font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                    <h3 className="text-[12px] font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
                       <Trash2 size={14} /> Danh sách hỏng tốt nghiệp
                     </h3>
                   </div>
                   <div className="overflow-auto max-h-[500px]">
-                    <table className="w-full text-left text-[13px]">
+                    <table className="w-full text-left text-[14px]">
                       <thead className="bg-bento-table-header sticky top-0 border-b border-bento-border">
                         <tr>
                           <th className="px-5 py-4 font-black text-bento-text w-24">SBD</th>
@@ -1570,7 +1745,7 @@ export default function App() {
                             <td className="px-5 py-3 font-semibold text-bento-text whitespace-nowrap">{s.name}</td>
                             <td className="px-5 py-3 text-bento-subtext font-medium">{s.class}</td>
                             <td className="px-5 py-3 text-center text-red-600 font-black">{s.scores["XÉT TN"]}</td>
-                            <td className="px-5 py-3 text-orange-700 font-black text-[11px] uppercase">{getFailReason(s)}</td>
+                            <td className="px-5 py-3 text-orange-700 font-black text-[12px] uppercase">{getFailReason(s)}</td>
                           </tr>
                         )) : (
                           <tr><td colSpan={5} className="px-5 py-8 text-center text-bento-subtext font-medium">Không có thí sinh hỏng tốt nghiệp</td></tr>
@@ -1583,12 +1758,12 @@ export default function App() {
                 {/* Detailed Subject Stats */}
                 <div className="col-span-1 lg:col-span-5 bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm mt-4">
                   <div className="bg-bento-table-header px-6 py-4 border-b border-bento-border">
-                    <h3 className="text-[11px] font-black text-bento-text uppercase tracking-widest flex items-center gap-2">
+                    <h3 className="text-[12px] font-black text-bento-text uppercase tracking-widest flex items-center gap-2">
                       📊 Thống kê chi tiết theo môn học
                     </h3>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[12px]">
+                    <table className="w-full text-left text-[13px]">
                       <thead className="bg-bento-table-header border-b border-bento-border">
                         <tr className="divide-x divide-bento-border">
                           <th className="px-6 py-5 font-black text-bento-text uppercase text-sm">Môn học</th>
@@ -1680,12 +1855,12 @@ export default function App() {
                   <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm">
                     <div className="bg-emerald-50 px-6 py-4 border-b border-emerald-100 flex items-center gap-2">
                       <Trophy size={16} className="text-emerald-600" />
-                      <h3 className="text-[11px] font-black text-emerald-900 uppercase tracking-widest">TOP THÍ SINH CÓ ĐIỂM THI CAO NHẤT MÔN {selectedSubject.toUpperCase()}</h3>
+                      <h3 className="text-[12px] font-black text-emerald-900 uppercase tracking-widest">TOP THÍ SINH CÓ ĐIỂM THI CAO NHẤT MÔN {selectedSubject.toUpperCase()}</h3>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-[13px]">
+                      <table className="w-full text-left text-[14px]">
                         <thead>
-                          <tr className="bg-emerald-50/30 border-b border-bento-border text-[11px]">
+                          <tr className="bg-emerald-50/30 border-b border-bento-border text-[12px]">
                             <th className="px-6 py-3 font-black text-bento-subtext text-center w-16 border-r border-bento-border">TT</th>
                             <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">SBD</th>
                             <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">HỌ VÀ TÊN</th>
@@ -1711,12 +1886,12 @@ export default function App() {
                   {/* Range distribution Table */}
                   <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm">
                     <div className="bg-bento-table-header px-6 py-4 border-b border-bento-border">
-                      <h3 className="text-[11px] font-black text-bento-text uppercase tracking-widest">Phân bố điểm theo các khoảng mốc</h3>
+                      <h3 className="text-[12px] font-black text-bento-text uppercase tracking-widest">Phân bố điểm theo các khoảng mốc</h3>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-[13px]">
+                      <table className="w-full text-left text-[14px]">
                         <thead>
-                          <tr className="bg-bento-bg/50 border-b border-bento-border text-[11px]">
+                          <tr className="bg-bento-bg/50 border-b border-bento-border text-[12px]">
                             <th rowSpan={2} className="px-6 py-4 font-black text-bento-text text-left border-r border-bento-border uppercase sticky left-0 bg-bento-card">Lớp</th>
                             <th rowSpan={2} className="px-6 py-4 font-black text-bento-text text-center border-r border-bento-border uppercase">Dự thi</th>
                             {calculateSubjectDetailedStats.ranges.map(r => (
@@ -1727,12 +1902,12 @@ export default function App() {
                           <tr className="bg-bento-bg/30 border-b border-bento-border">
                             {calculateSubjectDetailedStats.ranges.map((_, i) => (
                               <React.Fragment key={i}>
-                                <th className="px-4 py-2 text-[10px] font-black text-bento-subtext text-center border-r border-bento-border">SL</th>
-                                <th className="px-4 py-2 text-[10px] font-black text-bento-subtext text-center border-r border-bento-border last:border-r-0">TL (%)</th>
+                                <th className="px-4 py-2 text-[11px] font-black text-bento-subtext text-center border-r border-bento-border">SL</th>
+                                <th className="px-4 py-2 text-[11px] font-black text-bento-subtext text-center border-r border-bento-border last:border-r-0">TL (%)</th>
                               </React.Fragment>
                             ))}
-                            <th className="px-4 py-2 text-[10px] font-black text-emerald-700 text-center border-r border-bento-border border-l-2 border-emerald-200">SL</th>
-                            <th className="px-4 py-2 text-[10px] font-black text-emerald-700 text-center">TL (%)</th>
+                            <th className="px-4 py-2 text-[11px] font-black text-emerald-700 text-center border-r border-bento-border border-l-2 border-emerald-200">SL</th>
+                            <th className="px-4 py-2 text-[11px] font-black text-emerald-700 text-center">TL (%)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-bento-border">
@@ -1771,7 +1946,7 @@ export default function App() {
                   {/* Chart and Stats Table */}
                   <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                     <div className="lg:col-span-3 bg-bento-card border border-bento-border rounded-2xl p-6">
-                      <div className="text-[10px] font-black text-bento-subtext uppercase tracking-widest mb-6">Biểu đồ phổ điểm mô phỏng (0 - 10, bước 0.25)</div>
+                      <div className="text-[11px] font-black text-bento-subtext uppercase tracking-widest mb-6">Biểu đồ phổ điểm mô phỏng (0 - 10, bước 0.25)</div>
                       <div className="h-[400px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={calculateSubjectDetailedStats.histogram}>
@@ -1789,9 +1964,9 @@ export default function App() {
                     </div>
                     <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden self-start">
                       <div className="bg-slate-50 px-5 py-3 border-b border-bento-border">
-                        <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Các chỉ số thống kê</p>
+                        <p className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Các chỉ số thống kê</p>
                       </div>
-                      <table className="w-full text-[13px]">
+                      <table className="w-full text-[14px]">
                         <tbody className="divide-y divide-bento-border">
                           <StatRow label="Số thí sinh" value={calculateSubjectDetailedStats.total} />
                           <StatRow label="Điểm trung bình (ĐTB)" value={calculateSubjectDetailedStats.advanced.avg} highlight />
@@ -1813,7 +1988,7 @@ export default function App() {
                     
                     <div>
                       {/* AI Assessment */}
-                      <div className="bg-indigo-50 border-l-8 border-indigo-500 p-8 rounded-2xl text-[15px] leading-relaxed italic text-indigo-900 shadow-sm">
+                      <div className="bg-indigo-50 border-l-8 border-indigo-500 p-8 rounded-2xl text-[16px] leading-relaxed italic text-indigo-900 shadow-sm">
                         <div className="flex items-start gap-4">
                           <div className="p-2 bg-indigo-100 rounded-lg mt-1">
                             <BookOpen size={20} className="text-indigo-600" />
@@ -1889,12 +2064,12 @@ export default function App() {
                     <div className="bg-bento-card border border-red-200 rounded-2xl overflow-hidden shadow-sm">
                       <div className="bg-red-50 px-6 py-4 border-b border-red-100 flex items-center gap-2">
                         <AlertCircle size={16} className="text-red-600" />
-                        <h3 className="text-[11px] font-black text-red-900 uppercase tracking-widest">Danh sách thí sinh hỏng tốt nghiệp (Lớp {selectedClass})</h3>
+                        <h3 className="text-[12px] font-black text-red-900 uppercase tracking-widest">Danh sách thí sinh hỏng tốt nghiệp (Lớp {selectedClass})</h3>
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px]">
+                        <table className="w-full text-left text-[14px]">
                           <thead>
-                            <tr className="bg-red-50/30 border-b border-bento-border text-[11px]">
+                            <tr className="bg-red-50/30 border-b border-bento-border text-[12px]">
                               <th className="px-6 py-3 font-black text-bento-subtext text-center w-16 border-r border-bento-border">TT</th>
                               <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">SBD</th>
                               <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">HỌ VÀ TÊN</th>
@@ -1971,12 +2146,12 @@ export default function App() {
                           <tr className="bg-bento-bg/30 border-b border-bento-border">
                             {calculateClassDetailedStats.ranges.map((_, i) => (
                               <React.Fragment key={i}>
-                                <th className="px-4 py-2 text-[10px] font-black text-bento-subtext text-center border-r border-bento-border">SL</th>
-                                <th className="px-4 py-2 text-[10px] font-black text-bento-subtext text-center border-r border-bento-border last:border-r-0">TL (%)</th>
+                                <th className="px-4 py-2 text-[11px] font-black text-bento-subtext text-center border-r border-bento-border">SL</th>
+                                <th className="px-4 py-2 text-[11px] font-black text-bento-subtext text-center border-r border-bento-border last:border-r-0">TL (%)</th>
                               </React.Fragment>
                             ))}
-                            <th className="px-4 py-2 text-[10px] font-black text-emerald-700 text-center border-r border-bento-border border-l-2 border-emerald-200">SL</th>
-                            <th className="px-4 py-2 text-[10px] font-black text-emerald-700 text-center">TL (%)</th>
+                            <th className="px-4 py-2 text-[11px] font-black text-emerald-700 text-center border-r border-bento-border border-l-2 border-emerald-200">SL</th>
+                            <th className="px-4 py-2 text-[11px] font-black text-emerald-700 text-center">TL (%)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-bento-border">
@@ -2015,7 +2190,7 @@ export default function App() {
             >
               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-bento-card p-8 rounded-2xl border border-bento-border shadow-sm">
                 <div className="flex-1">
-                  <h3 className="text-2xl font-black text-bento-text uppercase tracking-tight">SO SÁNH KẾT QUẢ THI LẦN 1 VÀ LẦN 2</h3>
+                  <h3 className="text-2xl font-black text-bento-text uppercase tracking-tight">SO SÁNH KẾT QUẢ THI LẦN {config.comparisonSessions?.[0] || 1} VÀ LẦN {config.comparisonSessions?.[1] || 2}</h3>
                   <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest mt-1">Đối chiếu tiến bộ giữa hai lần thi thử tốt nghiệp</p>
                 </div>
                 
@@ -2067,11 +2242,11 @@ export default function App() {
                         <th className="px-6 py-4 font-black text-slate-700 uppercase tracking-tighter text-center" colSpan={3}>Điểm thi TB (Điểm)</th>
                       </tr>
                       <tr className="bg-slate-50/50 border-b border-bento-border divide-x divide-bento-border">
-                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần 1</th>
-                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần 2</th>
+                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần {config.comparisonSessions?.[0] || 1}</th>
+                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần {config.comparisonSessions?.[1] || 2}</th>
                         <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Tăng/Giảm</th>
-                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần 1</th>
-                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần 2</th>
+                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần {config.comparisonSessions?.[0] || 1}</th>
+                        <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Lần {config.comparisonSessions?.[1] || 2}</th>
                         <th className="px-4 py-3 font-black text-slate-500 uppercase text-center text-[10px]">Tăng/Giảm</th>
                       </tr>
                     </thead>
@@ -2126,19 +2301,29 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.98 }}
               className="col-span-1 md:col-span-4 space-y-6"
             >
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-bento-card p-8 rounded-2xl border border-bento-border shadow-sm">
-                <div className="flex-1">
-                  <h3 className="text-2xl font-black text-bento-text uppercase tracking-tight">SO SÁNH CỤM CHUYÊN MÔN</h3>
-                  <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest mt-1">Đối chiếu kết quả thi giữa các trường trong cụm</p>
+              {role === 'viewer' && !config.allowGroupComparison ? (
+                <div className="bg-bento-card border border-bento-border rounded-2xl p-20 text-center shadow-sm">
+                   <div className="max-w-2xl mx-auto">
+                      <BarChart3 size={64} className="mx-auto text-slate-200 mb-6" />
+                      <h3 className="text-[20px] font-black text-slate-800 uppercase tracking-tight mb-2">HIỆN TẠI KHÔNG CÓ THÔNG TIN ĐỂ SO SÁNH TRONG CỤM CHUYÊN MÔN</h3>
+                      <p className="text-slate-400 font-bold text-[12px] uppercase tracking-widest">Vui lòng quay lại sau hoặc liên hệ quản trị viên</p>
+                   </div>
                 </div>
-                
-                <div className="flex flex-wrap gap-3 w-full lg:w-auto">
-                  <button 
-                    onClick={() => setSelectedSchoolIdx(-1)}
-                    className="flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all bg-slate-800 text-white hover:bg-black shadow-lg shadow-slate-900/10"
-                  >
-                    <Layout size={14} /> ĐẦU TRANG
-                  </button>
+              ) : (
+                <>
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-bento-card p-8 rounded-2xl border border-bento-border shadow-sm">
+                    <div className="flex-1">
+                      <h3 className="text-2xl font-black text-bento-text uppercase tracking-tight">SO SÁNH CỤM CHUYÊN MÔN</h3>
+                      <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest mt-1">Đối chiếu kết quả thi giữa các trường trong cụm</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3 w-full lg:w-auto items-center">
+                      <button 
+                        onClick={() => setSelectedSchoolIdx(-1)}
+                        className="flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all bg-slate-800 text-white hover:bg-black shadow-lg shadow-slate-900/10"
+                      >
+                        <Layout size={14} /> ĐẦU TRANG
+                      </button>
 
                   <div className="relative">
                     <input 
@@ -2176,9 +2361,8 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
               <div className="bg-bento-card border border-bento-border rounded-2xl p-8 shadow-sm">
-                <div className="flex flex-col items-center gap-6">
+                    <div className="flex flex-col items-center gap-6">
                   <div className="w-full max-w-md text-center">
                     <label className="text-base font-black text-red-600 uppercase tracking-widest block mb-4 animate-pulse">CHỌN TRƯỜNG ĐỂ ĐỐI SÁNH</label>
                     <select 
@@ -2657,8 +2841,10 @@ export default function App() {
                   )}
                 </div>
               </div>
-            </motion.div>
+            </>
           )}
+        </motion.div>
+      )}
         </AnimatePresence>
       </main>
     </div>
@@ -2676,7 +2862,7 @@ function SummaryCard({ label, value, rate, color = "accent" }: { label: string, 
   
   return (
     <div className="bg-bento-card border border-bento-border p-6 rounded-2xl">
-      <p className="text-[10px] font-black text-bento-subtext uppercase tracking-widest mb-2">{label}</p>
+      <p className="text-[11px] font-black text-bento-subtext uppercase tracking-widest mb-2">{label}</p>
       <div className="flex items-baseline gap-2">
         <p className={cn("text-4xl font-black", colorMap[color] ? colorMap[color].split(' ')[0] : "text-bento-text")}>{value}</p>
         {rate !== undefined && (
@@ -2708,7 +2894,7 @@ function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: (
     <button 
       onClick={onClick}
       className={cn(
-        "flex items-center gap-4 w-full px-5 py-3.5 rounded-xl transition-all font-black text-[11px] uppercase tracking-widest border",
+        "flex items-center gap-4 w-full px-5 py-3.5 rounded-xl transition-all font-black text-[12px] uppercase tracking-widest border",
         active 
           ? "bg-bento-accent/10 text-bento-accent border-bento-accent/30 shadow-lg shadow-bento-accent/5" 
           : "text-bento-subtext hover:bg-bento-accent/5 hover:text-bento-text border-transparent"

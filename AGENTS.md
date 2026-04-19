@@ -9,7 +9,7 @@
 ## Table Design
 - **Name Wrapping**: All student names in dashboard tables must use `whitespace-nowrap` to prevent breaking into multiple lines.
 - **Typography**:
-  - General UI: Inter (sans-serif).
+  - General UI: Roboto (sans-serif).
   - Identification (SBD): JetBrains Mono for a technical, precise feel.
 - **Padding**: Use compact padding (e.g., `px-4 py-3`) for dashboard tables to fit more content.
 
@@ -57,9 +57,19 @@
 ## Comparison History (So sánh Lần trước)
 - **Menu Position**: Placed between "THỐNG KÊ LỚP" and "SO SÁNH CỤM".
 - **Storage**: Data is managed independently in `comparison_data/latest` to avoid affecting school/class results.
-- **Import Requirement**: File only needs LẦN 1 and LẦN 2 data for both "Tỉ lệ TB trở lên" and "Điểm thi TB".
-- **Auto-calculation**: The app must automatically calculate `Tăng/Giảm = Lần 2 - Lần 1`.
+- **Import Requirement**: File only needs two comparison sessions (configured in Settings) for both "Tỉ lệ TB trở lên" and "Điểm thi TB".
+- **Auto-calculation**: The app automatically calculates `Tăng/Giảm = Lần Sau - Lần Trước`.
 - **Condition Styling**:
   - Positive increase (> 0): Emerald green text/background.
   - Negative decrease (< 0): Red text/background.
-- **Header Structure**: Two-tier header showing subjects followed by multi-column groups for Rates and Scores.
+- **Header Structure**: Two-tier header showing subjects followed by multi-column groups for Rates and Scores. Các nhãn "Lần 1", "Lần 2" được điều chỉnh động theo cấu hình hệ thống.
+
+## System Configuration (Cấu hình Hệ thống)
+- **Access Control**: 
+  - Admin (Code: `487060`): Có toàn quyền truy cập CẤU HÌNH, DỮ LIỆU, KHEN THƯỞNG.
+  - Viewer (Code: `111111`): Bị giới hạn truy cập. Các tab CẤU HÌNH và DỮ LIỆU bị vô hiệu hóa (disabled).
+- **Core Settings**:
+  - **Exam Session**: Thiết lập số lần thi hiện tại (1, 2, 3...). Nếu đặt là `1`, tab "SO SÁNH LẦN TRƯỚC" tự động bị ẩn/mờ.
+  - **Comparison Selection**: Cho phép chọn chính xác 2 lần thi từ danh sách (1-4) để so sánh trong tab Lịch sử.
+  - **Group Visibility**: Nút gạt (CÓ/KHÔNG) để kiểm soát việc người dùng thông thường có được xem dữ liệu "SO SÁNH CỤM" hay không.
+- **Persistence**: Tất cả cấu hình được lưu tại Firestore (`config/app`) và đồng bộ thời gian thực.
