@@ -43,6 +43,10 @@
     "config/compare_2025_academic": {
       "schema": "object",
       "description": "Dữ liệu so sánh kết quả học tập 2025"
+    },
+    "stats/page_visits": {
+      "schema": "object",
+      "description": "Thống kê lượt truy cập"
     }
   }
 }

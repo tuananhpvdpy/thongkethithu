@@ -15,7 +15,8 @@ import { GoogleGenAI } from "@google/genai";
 import { db } from './firebase';
 import { 
   collection, addDoc, getDocs, query, where, deleteDoc, 
-  doc, setDoc, getDoc, writeBatch, onSnapshot, orderBy 
+  doc, setDoc, getDoc, writeBatch, onSnapshot, orderBy,
+  increment, updateDoc
 } from 'firebase/firestore';
 import { cn } from './lib/utils';
 
@@ -98,6 +99,7 @@ export default function App() {
   const [importing, setImporting] = useState<boolean>(false);
   const [tempData, setTempData] = useState<Student[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<string>("");
+  const [visitCount, setVisitCount] = useState<number>(0);
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [assessment, setAssessment] = useState<string>("");
   const [loadingAssessment, setLoadingAssessment] = useState<boolean>(false);
@@ -441,6 +443,34 @@ export default function App() {
         }
       }
     });
+
+    // Visit counter logic
+    const handleVisits = async () => {
+      const visitRef = doc(db, "stats", "page_visits");
+      try {
+        const visitSnap = await getDoc(visitRef);
+        if (visitSnap.exists()) {
+          await updateDoc(visitRef, {
+            count: increment(1)
+          });
+          setVisitCount(visitSnap.data().count + 1);
+        } else {
+          await setDoc(visitRef, { count: 1 });
+          setVisitCount(1);
+        }
+      } catch (err) {
+        console.error("Error handling visits:", err);
+      }
+    };
+
+    if (!sessionStorage.getItem('visited')) {
+      handleVisits();
+      sessionStorage.setItem('visited', 'true');
+    } else {
+      getDoc(doc(db, "stats", "page_visits")).then(snap => {
+        if (snap.exists()) setVisitCount(snap.data().count);
+      });
+    }
 
     return () => {
       unsubscribeConfig();
@@ -1699,8 +1729,15 @@ export default function App() {
             </button>
           </form>
 
-          <div className="mt-10 pt-6 border-t border-bento-border/50">
+          <div className="mt-10 pt-6 border-t border-bento-border/50 flex flex-col gap-4">
             <p className="text-[11px] text-bento-subtext uppercase tracking-widest font-black">THIẾT KẾ BỞI: <span className="text-blue-600">TRẦN TUẤN ANH</span></p>
+            <div className="flex items-center justify-center gap-2">
+              <div className="px-3 py-1 bg-slate-100 rounded-full border border-slate-200">
+                <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-black">
+                  Số lượt truy cập: <span className="text-bento-accent text-xs ml-1">{visitCount + 100}</span>
+                </p>
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>

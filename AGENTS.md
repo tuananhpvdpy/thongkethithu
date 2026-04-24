@@ -84,10 +84,17 @@
      - Chức năng: Chỉ có IMPORT và CẬP NHẬT. Không hiển thị bộ lọc lớp và nút xuất Excel.
   3. **DANH SÁCH HỌC SINH CÓ NGUY CƠ**:
      - Tiêu đề: "DANH SÁCH HỌC SINH CÓ NGUY CƠ".
+     - Mô tả: "Danh sách học sinh có nguy cơ dựa trên kết quả học tập".
      - Chức năng: Đầy đủ IMPORT, CẬP NHẬT, CHỌN LỚP, và XUẤT EXCEL.
      - Số thứ tự (TT): Phải đánh lại từ 1 khi áp dụng bộ lọc lớp.
+     - **Bảng tóm tắt số lượng**: Hiển thị số lượng HS nguy cơ theo từng lớp (TỔNG, 12C1, ..., 12C8) nằm sau các nút IMPORT/UPDATE và trước Menu chọn lớp.
 - **Định dạng chung**:
   - Con số: Luôn hiển thị chính xác 2 chữ số thập phân (ví dụ: `6.90`, `6.00`).
   - Cột LỆCH 1: Số dương màu xanh, số âm màu đỏ.
   - Cột LỆCH 2: Số dương màu đỏ, số âm màu xanh.
 - **Visibility**: Điều khiển bởi cấu hình hệ thống (Admin). Nếu tắt, menu sẽ bị làm mờ và không thể truy cập.
+
+## Các bảng thống kê bổ sung (Top điểm thấp)
+- **THỐNG KÊ TRƯỜNG**: Thêm "DANH SÁCH HỌC SINH CÓ TRUNG BÌNH ĐIỂM THI THẤP (TOP 10)" nằm sau bảng Hỏng tốt nghiệp.
+- **THỐNG KÊ MÔN**: Thêm "DANH SÁCH HỌC SINH CÓ ĐIỂM THI THẤP MÔN X (TOP 5)" nằm sau bảng Top điểm cao.
+- **THỐNG KÊ LỚP**: Thêm "DANH SÁCH HỌC SINH CÓ TRUNG BÌNH ĐIỂM THI THẤP (TOP 5)" nằm sau bảng Top điểm cao.
