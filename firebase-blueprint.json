@@ -35,6 +35,14 @@
     "config": {
       "schema": "AppConfig",
       "description": "Cấu hình hệ thống"
+    },
+    "config/compare_2025_avg": {
+      "schema": "object",
+      "description": "Dữ liệu so sánh trung bình điểm 2025"
+    },
+    "config/compare_2025_academic": {
+      "schema": "object",
+      "description": "Dữ liệu so sánh kết quả học tập 2025"
     }
   }
 }

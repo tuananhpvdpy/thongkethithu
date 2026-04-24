@@ -6,9 +6,10 @@ import {
 import { 
   FileSpreadsheet, BarChart3, Users, BookOpen, Settings, 
   Upload, CheckCircle2, AlertCircle, LogOut, ChevronRight,
-  Search, Filter, Download, Trash2, LayoutDashboard, Trophy, Layout
+  Search, Filter, Download, Trash2, LayoutDashboard, Trophy, Layout, ArrowLeft, TrendingDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+const { read, utils } = XLSX;
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import { db } from './firebase';
@@ -35,6 +36,7 @@ interface AppConfig {
   examSession?: number;
   comparisonSessions?: number[];
   allowGroupComparison?: boolean;
+  allow2025Comparison?: boolean;
 }
 
 const ADMIN_CODE = "487060";
@@ -71,9 +73,8 @@ const DATA_COLUMNS = [
 
 const formatScore = (val: any) => {
   if (val === undefined || val === null || val === "") return "";
-  const num = parseFloat(val);
+  const num = parseFloat(String(val).replace(',', '.'));
   if (isNaN(num)) return val;
-  if (num === 0) return "";
   return num.toFixed(2);
 };
 
@@ -90,7 +91,8 @@ export default function App() {
     lastImport: null,
     examSession: 1,
     comparisonSessions: [1, 2],
-    allowGroupComparison: false
+    allowGroupComparison: false,
+    allow2025Comparison: false
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [importing, setImporting] = useState<boolean>(false);
@@ -104,7 +106,8 @@ export default function App() {
   const [settingsForm, setSettingsForm] = useState({
     examSession: 1,
     comparisonSessions: [1, 2],
-    allowGroupComparison: false
+    allowGroupComparison: false,
+    allow2025Comparison: false
   });
   const [savingSettings, setSavingSettings] = useState<boolean>(false);
 
@@ -128,6 +131,129 @@ export default function App() {
   const [comparisonData, setComparisonData] = useState<any[]>([]);
   const [tempComparisonData, setTempComparisonData] = useState<any[] | null>(null);
   const [updatingComparison, setUpdatingComparison] = useState<boolean>(false);
+
+  // 2025 Comparison state
+  const [activeSubTab2025, setActiveSubTab2025] = useState<string | null>(null);
+  const [avgScore2025Data, setAvgScore2025Data] = useState<any[]>([]);
+  const [tempAvgScore2025, setTempAvgScore2025] = useState<any[] | null>(null);
+  const [updatingAvgScore2025, setUpdatingAvgScore2025] = useState<boolean>(false);
+
+  const [academicResultsData, setAcademicResultsData] = useState<any[]>([]);
+  const [tempAcademicResults, setTempAcademicResults] = useState<any[] | null>(null);
+  const [updatingAcademicResults, setUpdatingAcademicResults] = useState<boolean>(false);
+
+  const [targetScoreData, setTargetScoreData] = useState<any[]>([]);
+  const [tempTargetScore, setTempTargetScore] = useState<any[] | null>(null);
+  const [updatingTargetScore, setUpdatingTargetScore] = useState<boolean>(false);
+  const [classFilter2025, setClassFilter2025] = useState<string>("CHỌN LỚP");
+
+  const riskStatsPerClass = useMemo(() => {
+    if (!targetScoreData || targetScoreData.length <= 1) return [];
+    const headers = targetScoreData[0];
+    const classIdx = headers.findIndex((h: any) => String(h).toUpperCase().includes("LỚP"));
+    if (classIdx === -1) return [];
+
+    const classes = ["TỔNG", "12C1", "12C2", "12C3", "12C4", "12C5", "12C6", "12C7", "12C8"];
+    const counts = classes.map(cls => {
+      if (cls === "TỔNG") return targetScoreData.length - 1;
+      return targetScoreData.slice(1).filter(row => {
+        const classVal = String(row[classIdx] || "").toUpperCase();
+        return classVal.includes(cls);
+      }).length;
+    });
+
+    return { classes, counts };
+  }, [targetScoreData]);
+
+  const getFilteredRiskData = () => {
+    if (!targetScoreData || targetScoreData.length <= 1) return [];
+    const headers = targetScoreData[0];
+    const classIdx = headers.findIndex((h: any) => String(h).toUpperCase().includes("LỚP"));
+    const ttIdx = headers.findIndex((h: any) => String(h).toUpperCase() === "TT");
+    
+    let filtered = targetScoreData.slice(1);
+    const filterUpper = classFilter2025.toUpperCase();
+    
+    if (classFilter2025 !== "CHỌN LỚP" && classFilter2025 !== "TẤT CẢ" && classIdx !== -1) {
+      filtered = filtered.filter(row => {
+        const classVal = String(row[classIdx] || "").toUpperCase();
+        return classVal.includes(filterUpper);
+      });
+    }
+
+    // Re-index TT column starting from 1
+    if (ttIdx !== -1) {
+      return filtered.map((row, idx) => {
+        const newRow = [...row];
+        newRow[ttIdx] = idx + 1;
+        return newRow;
+      });
+    }
+    
+    return filtered;
+  };
+
+  const getFilteredAcademicResultsData = () => {
+    if (!academicResultsData || academicResultsData.length <= 1) return [];
+    const headers = academicResultsData[0];
+    const classIdx = headers.findIndex((h: any) => String(h).toUpperCase().includes("LỚP"));
+    const ttIdx = headers.findIndex((h: any) => String(h).toUpperCase() === "TT");
+    
+    let filtered = academicResultsData.slice(1);
+    const filterUpper = classFilter2025.toUpperCase();
+    
+    if (classFilter2025 !== "CHỌN LỚP" && classFilter2025 !== "TẤT CẢ" && classIdx !== -1) {
+      filtered = filtered.filter(row => {
+        const classVal = String(row[classIdx] || "").toUpperCase();
+        return classVal.includes(filterUpper);
+      });
+    }
+
+    // Re-index TT column starting from 1
+    if (ttIdx !== -1) {
+      return filtered.map((row, idx) => {
+        const newRow = [...row];
+        newRow[ttIdx] = idx + 1;
+        return newRow;
+      });
+    }
+    
+    return filtered;
+  };
+
+  const handleExportRiskExcel = () => {
+    if (!targetScoreData || targetScoreData.length === 0) return;
+    
+    const filteredRows = getFilteredRiskData();
+    if (filteredRows.length === 0) {
+      alert("Không có dữ liệu để xuất!");
+      return;
+    }
+    
+    const ws = XLSX.utils.aoa_to_sheet([targetScoreData[0], ...filteredRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "DanhSachNguyCo");
+    
+    const fileName = `Danh_Sach_Hoc_Sinh_Nguy_Co_${classFilter2025 === "CHỌN LỚP" || classFilter2025 === "TẤT CẢ" ? "TAT_CA" : classFilter2025}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  const handleExportAcademicExcel = () => {
+    if (!academicResultsData || academicResultsData.length === 0) return;
+    
+    const filteredRows = getFilteredAcademicResultsData();
+    if (filteredRows.length === 0) {
+      alert("Không có dữ liệu để xuất!");
+      return;
+    }
+    
+    const ws = XLSX.utils.aoa_to_sheet([academicResultsData[0], ...filteredRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "KetQuaHocTap");
+    
+    const fileName = `Ket_Qua_Hoc_Tap_${classFilter2025 === "CHỌN LỚP" || classFilter2025 === "TẤT CẢ" ? "TAT_CA" : classFilter2025}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
 
   useEffect(() => {
     const fetchPvdAlways = async () => {
@@ -233,7 +359,8 @@ export default function App() {
         setSettingsForm({
           examSession: data.examSession || 1,
           comparisonSessions: data.comparisonSessions || [1, 2],
-          allowGroupComparison: data.allowGroupComparison || false
+          allowGroupComparison: data.allowGroupComparison || false,
+          allow2025Comparison: data.allow2025Comparison || false
         });
       } else {
         // Initialize config if not exists
@@ -242,7 +369,8 @@ export default function App() {
           lastImport: null,
           examSession: 1,
           comparisonSessions: [1, 2],
-          allowGroupComparison: false
+          allowGroupComparison: false,
+          allow2025Comparison: false
         });
       }
     });
@@ -276,12 +404,53 @@ export default function App() {
       }
     });
 
+    const unsubscribeAvgScore2025 = onSnapshot(doc(db, "config", "compare_2025_avg"), (snapshot) => {
+      if (snapshot.exists()) {
+        setAvgScore2025Data(snapshot.data().data || []);
+      }
+    });
+
+    const unsubscribeAcademicResults2025 = onSnapshot(doc(db, "config", "compare_2025_academic"), (snapshot) => {
+      if (snapshot.exists()) {
+        const rawData = snapshot.data().data;
+        if (rawData) {
+          try {
+            setAcademicResultsData(JSON.parse(rawData));
+          } catch (e) {
+            console.error("Error parsing academic results:", e);
+            setAcademicResultsData([]);
+          }
+        } else {
+          setAcademicResultsData([]);
+        }
+      }
+    });
+
+    const unsubscribeTargetScore2025 = onSnapshot(doc(db, "config", "compare_2025_target"), (snapshot) => {
+      if (snapshot.exists()) {
+        const rawData = snapshot.data().data;
+        if (rawData) {
+          try {
+            setTargetScoreData(JSON.parse(rawData));
+          } catch (e) {
+            console.error("Error parsing target score:", e);
+            setTargetScoreData([]);
+          }
+        } else {
+          setTargetScoreData([]);
+        }
+      }
+    });
+
     return () => {
       unsubscribeConfig();
       unsubscribeStudents();
       unsubscribeRewards();
       unsubscribeGroup();
       unsubscribeComparison();
+      unsubscribeAvgScore2025();
+      unsubscribeAcademicResults2025();
+      unsubscribeTargetScore2025();
     };
   }, []);
 
@@ -446,10 +615,34 @@ export default function App() {
       return { name: cls, avg: parseFloat(avg.toFixed(2)), count: classStudents.length };
     });
 
+    // Top 10 lowest TB THI school wide
+    const participatedStudents = students.filter(s => {
+      const v = parseFloat(String(s.scores["TB THI"] || "").replace(',', '.'));
+      return !isNaN(v) && v > 0;
+    });
+
+    const sortedByAvgSchool = [...participatedStudents]
+      .sort((a, b) => {
+        const scoreA = parseFloat(String(a.scores["TB THI"]).replace(',', '.'));
+        const scoreB = parseFloat(String(b.scores["TB THI"]).replace(',', '.'));
+        return scoreA - scoreB;
+      });
+    
+    let bottomStudentsSchool = [];
+    if (sortedByAvgSchool.length > 0) {
+      const thresholdIndex = Math.min(9, sortedByAvgSchool.length - 1);
+      const thresholdScore = parseFloat(String(sortedByAvgSchool[thresholdIndex].scores["TB THI"]).replace(',', '.'));
+      bottomStudentsSchool = sortedByAvgSchool.filter(s => {
+        const score = parseFloat(String(s.scores["TB THI"]).replace(',', '.'));
+        return score <= thresholdScore;
+      }).slice(0, 15); // Safety limit
+    }
+
     return { 
       totalStudents, participatedCount, absentCount, absentList, 
       passedList, failedList, passRate, failRate,
-      schoolAvg, subjectStats, detailedSubjectStats, classStats 
+      schoolAvg, subjectStats, detailedSubjectStats, classStats,
+      bottomStudentsSchool
     };
   }, [students]);
 
@@ -537,6 +730,15 @@ export default function App() {
       topStudents = sortedByScore.filter(s => s.score >= thresholdScore);
     }
 
+    // Bottom 5 Students (Lowest scores)
+    const sortedByScoreAsc = [...subjectScores].sort((a, b) => a.score - b.score);
+    let bottomStudents = [];
+    if (sortedByScoreAsc.length > 0) {
+      const thresholdIndex = Math.min(4, sortedByScoreAsc.length - 1);
+      const thresholdScore = sortedByScoreAsc[thresholdIndex].score;
+      bottomStudents = sortedByScoreAsc.filter(s => s.score <= thresholdScore);
+    }
+
     return {
       subject: selectedSubject,
       total,
@@ -552,6 +754,7 @@ export default function App() {
       ranges,
       histogram,
       topStudents,
+      bottomStudents,
       advanced: {
         avg: avg.toFixed(2),
         median: median.toFixed(2),
@@ -687,6 +890,15 @@ export default function App() {
       topStudentsByAvg = sortedByAvg.filter(s => s.avgScore >= thresholdScore);
     }
 
+    // Bottom 5 Students (Lowest avg)
+    const sortedByAvgAsc = [...sortedByAvg].sort((a, b) => a.avgScore - b.avgScore);
+    let bottomStudentsByAvg = [];
+    if (sortedByAvgAsc.length > 0) {
+      const thresholdIndex = Math.min(4, sortedByAvgAsc.length - 1);
+      const thresholdScore = sortedByAvgAsc[thresholdIndex].avgScore;
+      bottomStudentsByAvg = sortedByAvgAsc.filter(s => s.avgScore <= thresholdScore);
+    }
+
     return {
       className: selectedClass,
       metrics: {
@@ -701,6 +913,7 @@ export default function App() {
       subjectStats,
       ranges,
       topStudentsByAvg,
+      bottomStudentsByAvg,
       failedGradStudents
     };
   }, [selectedClass, students]);
@@ -1152,6 +1365,280 @@ export default function App() {
     }
   };
 
+  const handleImportAvgScore2025 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const jsonData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        if (jsonData.length < 1) {
+          alert("File không có dữ liệu!");
+          return;
+        }
+
+        const metrics: any[] = [];
+        let headerRowIdx = -1;
+        let colSub = -1, colSchool = -1, colProvince = -1;
+
+        // BƯỚC 1: Tìm dòng tiêu đề và các cột dựa trên từ khóa mở rộng
+        for (let i = 0; i < Math.min(jsonData.length, 25); i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0) continue;
+          
+          row.forEach((cell, idx) => {
+            const c = String(cell || "").toUpperCase().trim();
+            if (c === "MÔN" || c.includes("MÔN") || c.includes("SUBJECT") || c === "TÊN MÔN") {
+              if (colSub === -1) colSub = idx;
+            }
+            if (c.includes("TRƯỜNG") || c.includes("PVĐ") || c.includes("SCHOOL") || c === "TRƯỜNG") {
+              if (colSchool === -1) colSchool = idx;
+            }
+            if (c.includes("TỈNH") || c.includes("PHÚ YÊN") || c.includes("PROVINCE") || c === "TỈNH") {
+              if (colProvince === -1) colProvince = idx;
+            }
+          });
+
+          if (colSub !== -1 && (colSchool !== -1 || colProvince !== -1)) {
+            headerRowIdx = i;
+            break;
+          }
+        }
+
+        // BƯỚC 2: Nếu không thấy từ khóa "MÔN", tìm cột chứa tên các môn học thực tế
+        if (colSub === -1) {
+          const SAMPLE_SUBJECTS = ["TOÁN", "VĂN", "ANH", "LÝ", "HÓA", "SINH", "SỬ", "ĐỊA", "NGOẠI NGỮ", "GDCD", "KTPL"];
+          for (let i = 0; i < Math.min(jsonData.length, 25); i++) {
+            const row = jsonData[i];
+            if (!row) continue;
+            const foundIdx = row.findIndex(cell => {
+              const val = String(cell || "").toUpperCase();
+              return SAMPLE_SUBJECTS.some(sub => val.includes(sub)) && val.length < 20;
+            });
+            if (foundIdx !== -1) {
+              colSub = foundIdx;
+              headerRowIdx = Math.max(0, i - 1);
+              break;
+            }
+          }
+        }
+
+        // BƯỚC 3: Nếu vẫn thiếu cột số liệu (Trường/Tỉnh), tìm các cột chứa số cạnh cột MÔN
+        if (colSub !== -1) {
+          if (colSchool === -1 || colProvince === -1) {
+            // Tìm 2 cột chứa số liệu đầu tiên không phải cột Môn
+            const searchRow = jsonData[headerRowIdx + 1] || jsonData[headerRowIdx + 2] || jsonData[headerRowIdx];
+            if (searchRow) {
+              searchRow.forEach((cell, idx) => {
+                if (idx === colSub) return;
+                const val = parseFloat(String(cell || "").replace(',', '.'));
+                if (!isNaN(val) && val >= 0 && val <= 10) {
+                  if (colSchool === -1) colSchool = idx;
+                  else if (colProvince === -1) colProvince = idx;
+                }
+              });
+            }
+          }
+        }
+
+        // BƯỚC 4: Fallback tối thượng
+        if (colSub === -1) colSub = 0;
+        if (colSchool === -1) colSchool = 1;
+        if (colProvince === -1) colProvince = 2;
+        if (headerRowIdx === -1) headerRowIdx = 0;
+
+        // BƯỚC 5: Trích xuất dữ liệu thực tế
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length <= Math.max(colSub, colSchool, colProvince)) continue;
+
+          const subject = String(row[colSub] || "").trim();
+          if (!subject || subject.length > 30) continue; 
+
+          // Bắt đầu xử lý sau dòng tiêu đề (nếu tìm thấy)
+          if (headerRowIdx !== -1 && i <= headerRowIdx) {
+             const rowFull = String(row.join(" ")).toUpperCase();
+             // Chỉ bỏ qua nếu dòng này thực sự chứa từ khóa tiêu đề kỹ thuật
+             if (rowFull.includes("MÔN") || rowFull.includes("DANH SÁCH") || rowFull.includes("BẢNG")) continue;
+          }
+
+          // Bỏ qua dòng tiêu đề lặp lại hoặc dòng tổng
+          const upperSub = subject.toUpperCase();
+          if (["TỔNG", "CỘNG", "TRUNG BÌNH", "MÔN", "STT", "TT", "DANH SÁCH"].some(k => upperSub.includes(k))) continue;
+          
+          // Kiểm tra xem có phải là tên môn học không (không được chỉ chứa số)
+          if (/^\d+$/.test(subject)) continue;
+
+          const schoolVal = parseFloat(String(row[colSchool] || 0).replace(',', '.'));
+          const provinceVal = parseFloat(String(row[colProvince] || 0).replace(',', '.'));
+
+          if (!isNaN(schoolVal) || !isNaN(provinceVal)) {
+            metrics.push({
+              subject,
+              school: isNaN(schoolVal) ? 0 : schoolVal,
+              province: isNaN(provinceVal) ? 0 : provinceVal
+            });
+          }
+        }
+
+        if (metrics.length === 0) {
+          alert("Không tìm thấy dữ liệu phù hợp. Lưu ý: File cần có cột tên Môn học và 2 cột điểm số (Trường/Tỉnh).");
+          return;
+        }
+
+        // Loại bỏ trùng lặp nếu có
+        const uniqueMetrics = metrics.filter((v, i, a) => a.findIndex(t => t.subject === v.subject) === i);
+
+        setTempAvgScore2025(uniqueMetrics);
+        alert(`Đã nhận diện thành công ${uniqueMetrics.length} môn học! Hãy nhấn CẬP NHẬT.`);
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi xử lý file! Vui lòng đảm bảo file không bị khóa hoặc sai định dạng.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUpdateAvgScore2025 = async () => {
+    if (!tempAvgScore2025) return;
+    setUpdatingAvgScore2025(true);
+    try {
+      await setDoc(doc(db, "config", "compare_2025_avg"), { data: tempAvgScore2025 });
+      setAvgScore2025Data(tempAvgScore2025);
+      setTempAvgScore2025(null);
+      alert("Cập nhật dữ liệu so sánh 2025 thành công!");
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi khi cập nhật dữ liệu!");
+    } finally {
+      setUpdatingAvgScore2025(false);
+    }
+  };
+
+  const handleImportAcademicResults2025 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        
+        const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        if (jsonData.length < 2) {
+          alert("File không có dữ liệu!");
+          return;
+        }
+
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(jsonData.length, 20); i++) {
+          const row = jsonData[i];
+          if (row && row.some(cell => {
+            const s = String(cell || "").toUpperCase();
+            return s.includes("SBD") || s.includes("HỌ TÊN") || s.includes("HỌ VÀ TÊN") || s.includes("HỌ & TÊN") || s.includes("LỆCH");
+          })) {
+            headerIdx = i;
+            break;
+          }
+        }
+        if (headerIdx === -1) headerIdx = 0;
+
+        const processedRows = jsonData.slice(headerIdx).filter(row => row && row.length > 0);
+
+        setTempAcademicResults(processedRows);
+        alert(`Đã nhận diện thành công ${processedRows.length - 1} học sinh! Hãy nhấn CẬP NHẬT.`);
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi xử lý file! Vui lòng kiểm tra định dạng.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUpdateAcademicResults2025 = async () => {
+    if (!tempAcademicResults) return;
+    setUpdatingAcademicResults(true);
+    try {
+      await setDoc(doc(db, "config", "compare_2025_academic"), { data: JSON.stringify(tempAcademicResults) });
+      setAcademicResultsData(tempAcademicResults);
+      setTempAcademicResults(null);
+      alert("Cập nhật kết quả học tập 2025 thành công!");
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi khi cập nhật dữ liệu!");
+    } finally {
+      setUpdatingAcademicResults(false);
+    }
+  };
+
+  const handleImportTargetScore2025 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        
+        const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        if (jsonData.length < 2) {
+          alert("File không có dữ liệu!");
+          return;
+        }
+
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(jsonData.length, 20); i++) {
+          const row = jsonData[i];
+          if (row && row.some(cell => {
+            const s = String(cell || "").toUpperCase();
+            return s.includes("SBD") || s.includes("HỌ TÊN") || s.includes("HỌ VÀ TÊN") || s.includes("HỌ & TÊN") || s.includes("LỆCH");
+          })) {
+            headerIdx = i;
+            break;
+          }
+        }
+        if (headerIdx === -1) headerIdx = 0;
+
+        const processedRows = jsonData.slice(headerIdx).filter(row => row && row.length > 0);
+
+        setTempTargetScore(processedRows);
+        alert(`Đã nhận diện thành công ${processedRows.length - 1} học sinh! Hãy nhấn CẬP NHẬT.`);
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi xử lý file! Vui lòng kiểm tra định dạng.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUpdateTargetScore2025 = async () => {
+    if (!tempTargetScore) return;
+    setUpdatingTargetScore(true);
+    try {
+      await setDoc(doc(db, "config", "compare_2025_target"), { data: JSON.stringify(tempTargetScore) });
+      setTargetScoreData(tempTargetScore);
+      setTempTargetScore(null);
+      alert("Cập nhật điểm thi cần đạt 2025 thành công!");
+    } catch (err) {
+      console.error(err);
+      alert("Lỗi khi cập nhật dữ liệu!");
+    } finally {
+      setUpdatingTargetScore(false);
+    }
+  };
+
   const toggleGroupVisibility = async (val: boolean) => {
     // Deprecated for new settings tab
   };
@@ -1167,7 +1654,8 @@ export default function App() {
         ...config,
         examSession: settingsForm.examSession,
         comparisonSessions: settingsForm.comparisonSessions,
-        allowGroupComparison: settingsForm.allowGroupComparison
+        allowGroupComparison: settingsForm.allowGroupComparison,
+        allow2025Comparison: settingsForm.allow2025Comparison
       });
       alert("Lưu cấu hình thành công!");
     } catch (err) {
@@ -1314,6 +1802,20 @@ export default function App() {
             icon={<ChevronRight size={18} />}
             label="SO SÁNH CỤM"
           />
+
+          {config.allow2025Comparison ? (
+            <NavItem 
+              active={activeTab === "compare_2025"} 
+              onClick={() => setActiveTab("compare_2025")}
+              icon={<LayoutDashboard size={18} />}
+              label="SO SÁNH KHÁC"
+            />
+          ) : (
+            <div className="flex items-center gap-4 w-full px-5 py-3.5 rounded-xl text-bento-subtext opacity-30 font-bold text-[12px] uppercase tracking-widest cursor-not-allowed">
+              <LayoutDashboard size={18} />
+              <span>SO SÁNH KHÁC</span>
+            </div>
+          )}
         </nav>
 
         <div className="p-8 mt-auto flex flex-col gap-4">
@@ -1344,6 +1846,19 @@ export default function App() {
             {activeTab === "class" && "Thống Kê Theo Lớp"}
             {activeTab === "history" && `So Sánh Lần ${config.comparisonSessions?.[0] || 1} & ${config.comparisonSessions?.[1] || 2}`}
             {activeTab === "compare" && "So Sánh Cụm Chuyên Môn"}
+            {activeTab === "compare_2025" && (
+              <div className="flex items-center gap-3">
+                {activeSubTab2025 && (
+                  <button 
+                    onClick={() => setActiveSubTab2025(null)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white border border-bento-border rounded-lg text-[10px] font-black text-bento-accent uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                  >
+                    <ArrowLeft size={14} /> QUAY LẠI
+                  </button>
+                )}
+                <span>So Sánh Thông Tin Năm 2025</span>
+              </div>
+            )}
           </h2>
 
           <div className="flex gap-3 items-center">
@@ -1445,6 +1960,31 @@ export default function App() {
                   </div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase italic">* Nếu chọn KHÔNG, người dùng sẽ thấy thông báo chưa có thông tin cụm.</p>
                 </div>
+
+                {/* 2025 Comparison Choice */}
+                <div className="space-y-4">
+                  <label className="text-[11px] font-black text-bento-subtext uppercase tracking-widest border-l-4 border-indigo-600 pl-3">4. Cho phép so sánh năm 2025:</label>
+                  <div className="flex gap-4">
+                    {[
+                      { label: "CÓ", value: true, color: "emerald" },
+                      { label: "KHÔNG", value: false, color: "slate" }
+                    ].map(opt => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setSettingsForm({...settingsForm, allow2025Comparison: opt.value})}
+                        className={cn(
+                          "px-8 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all border-2",
+                          settingsForm.allow2025Comparison === opt.value
+                            ? (opt.value ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-600/20" : "bg-slate-800 border-slate-800 text-white shadow-lg shadow-slate-800/20")
+                            : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase italic">* Nếu chọn KHÔNG, mục SO SÁNH KHÁC trên menu sẽ bị làm mờ.</p>
+                </div>
               </div>
 
               <div className="pt-6 border-t border-bento-border flex justify-start">
@@ -1504,23 +2044,23 @@ export default function App() {
                         <tbody className="divide-y divide-bento-border">
                           {(tempData.length > 0 ? tempData : students).map((s, i) => (
                             <tr key={i} className="hover:bg-bento-accent/[0.02] transition-colors group">
-                              <td className="px-5 py-3 text-bento-text font-mono tabular-nums font-bold">{i + 1}</td>
-                              <td className="px-5 py-3 text-bento-accent font-mono font-bold tabular-nums tracking-tighter">{s.sbd}</td>
+                              <td className="px-5 py-3 text-bento-text font-sans tabular-nums font-bold">{i + 1}</td>
+                              <td className="px-5 py-3 text-bento-accent font-sans font-bold tabular-nums tracking-tighter">{s.sbd}</td>
                               <td className="px-5 py-3 text-bento-text font-bold whitespace-nowrap">{s.name}</td>
                               <td className="px-5 py-3 text-bento-text font-bold whitespace-nowrap">{s.class}</td>
                               {SUBJECTS.map(sub => (
                                 <td key={sub} className={cn(
-                                  "px-5 py-3 font-mono tabular-nums text-center font-bold",
+                                  "px-5 py-3 font-sans tabular-nums text-center font-bold",
                                   s.scores[sub] < 1 ? "text-bento-danger opacity-100" : "text-bento-text"
                                 )}>
                                   {formatScore(s.scores[sub])}
                                 </td>
                               ))}
-                              <td className="px-5 py-3 font-mono font-bold text-bento-accent text-center bg-bento-accent/5">{formatScore(s.scores["TB THI"])}</td>
-                              <td className="px-5 py-3 text-bento-text font-mono tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 10"])}</td>
-                              <td className="px-5 py-3 text-bento-text font-mono tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 11"])}</td>
-                              <td className="px-5 py-3 text-bento-text font-mono tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 12"])}</td>
-                              <td className="px-5 py-3 text-bento-text font-mono tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB HT"])}</td>
+                              <td className="px-5 py-3 font-sans font-bold text-bento-accent text-center bg-bento-accent/5">{formatScore(s.scores["TB THI"])}</td>
+                              <td className="px-5 py-3 text-bento-text font-sans tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 10"])}</td>
+                              <td className="px-5 py-3 text-bento-text font-sans tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 11"])}</td>
+                              <td className="px-5 py-3 text-bento-text font-sans tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB 12"])}</td>
+                              <td className="px-5 py-3 text-bento-text font-sans tabular-nums text-center font-bold">{formatScore(s.scores["ĐTB HT"])}</td>
                               <td className={cn(
                                 "px-5 py-3 font-bold text-[10px] uppercase text-center whitespace-nowrap",
                                 String(s.scores["XÉT TN"] || "").includes("Đỗ") ? "text-bento-success" : "text-bento-danger"
@@ -1602,11 +2142,11 @@ export default function App() {
                         
                         return (
                           <tr key={key} className={cn("transition-colors", entry.colorClass)}>
-                            <td className="px-6 py-3 font-mono text-center text-bento-subtext border-r border-bento-border bg-white">{idx + 1}</td>
-                            <td className="px-6 py-3 font-mono font-bold border-r border-bento-border">{entry.sbd}</td>
+                            <td className="px-6 py-3 font-sans text-center text-bento-subtext border-r border-bento-border bg-white">{idx + 1}</td>
+                            <td className="px-6 py-3 font-sans font-bold border-r border-bento-border">{entry.sbd}</td>
                             <td className="px-6 py-3 font-black whitespace-nowrap border-r border-bento-border uppercase">{entry.name}</td>
                             <td className="px-6 py-3 font-bold text-center border-r border-bento-border">{entry.class}</td>
-                            <td className="px-6 py-3 font-mono font-black text-center border-r border-bento-border">{entry.score.toFixed(2)}</td>
+                            <td className="px-6 py-3 font-sans font-black text-center border-r border-bento-border">{entry.score.toFixed(2)}</td>
                             <td className="px-6 py-3 font-black text-[11px] border-r border-bento-border uppercase tracking-tight">
                               {entry.achievement.includes('(') ? (
                                 <>
@@ -1627,7 +2167,7 @@ export default function App() {
                                   }));
                                 }}
                                 placeholder="0"
-                                className="w-full bg-white border border-bento-border px-4 py-2 rounded-lg font-mono font-bold text-right outline-none focus:ring-2 focus:ring-bento-accent/30"
+                                className="w-full bg-white border border-bento-border px-4 py-2 rounded-lg font-sans font-bold text-right outline-none focus:ring-2 focus:ring-bento-accent/30"
                               />
                             </td>
                             <td className="px-6 py-2 text-center">
@@ -1708,7 +2248,7 @@ export default function App() {
                       <tbody className="divide-y divide-bento-border">
                         {stats.absentList.length > 0 ? stats.absentList.map(s => (
                           <tr key={s.id} className="hover:bg-red-50/30">
-                            <td className="px-4 py-3 font-mono text-red-600 font-bold">{s.sbd}</td>
+                            <td className="px-4 py-3 font-sans text-red-600 font-bold">{s.sbd}</td>
                             <td className="px-4 py-3 font-semibold text-bento-text whitespace-nowrap">{s.name}</td>
                             <td className="px-4 py-3 text-bento-subtext font-medium">{s.class}</td>
                           </tr>
@@ -1741,7 +2281,7 @@ export default function App() {
                       <tbody className="divide-y divide-bento-border">
                         {stats.failedList.length > 0 ? stats.failedList.map(s => (
                           <tr key={s.id} className="hover:bg-orange-50/30">
-                            <td className="px-5 py-3 font-mono text-orange-600 font-bold">{s.sbd}</td>
+                            <td className="px-5 py-3 font-sans text-orange-600 font-bold">{s.sbd}</td>
                             <td className="px-5 py-3 font-semibold text-bento-text whitespace-nowrap">{s.name}</td>
                             <td className="px-5 py-3 text-bento-subtext font-medium">{s.class}</td>
                             <td className="px-5 py-3 text-center text-red-600 font-black">{s.scores["XÉT TN"]}</td>
@@ -1750,6 +2290,39 @@ export default function App() {
                         )) : (
                           <tr><td colSpan={5} className="px-5 py-8 text-center text-bento-subtext font-medium">Không có thí sinh hỏng tốt nghiệp</td></tr>
                         )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* School Bottom Students List */}
+                <div className="col-span-1 lg:col-span-5 bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm mt-4">
+                  <div className="bg-red-50 px-6 py-4 border-b border-bento-border text-center">
+                    <h3 className="text-[12px] font-black text-red-700 uppercase tracking-widest flex items-center justify-center gap-2">
+                       <TrendingDown size={14} /> DANH SÁCH HỌC SINH CÓ TRUNG BÌNH ĐIỂM THI THẤP (TOP 10)
+                    </h3>
+                  </div>
+                  <div className="overflow-auto max-h-[500px]">
+                    <table className="w-full text-left text-[14px]">
+                      <thead className="bg-bento-table-header sticky top-0 border-b border-bento-border">
+                        <tr>
+                          <th className="px-5 py-4 font-black text-bento-text w-24">TT</th>
+                          <th className="px-5 py-4 font-black text-bento-text w-24">SBD</th>
+                          <th className="px-5 py-4 font-black text-bento-text">Họ và tên</th>
+                          <th className="px-5 py-4 font-black text-bento-text w-24 text-center">Lớp</th>
+                          <th className="px-5 py-4 font-black text-bento-text text-center">ĐIỂM TB THI</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-bento-border">
+                        {stats.bottomStudentsSchool.map((s, idx) => (
+                          <tr key={s.id} className="hover:bg-red-50/30">
+                            <td className="px-5 py-3 font-sans text-bento-subtext font-bold">{idx + 1}</td>
+                            <td className="px-5 py-3 font-sans text-red-600 font-bold">{s.sbd}</td>
+                            <td className="px-5 py-3 font-semibold text-bento-text whitespace-nowrap">{s.name}</td>
+                            <td className="px-5 py-3 text-bento-subtext font-medium text-center">{s.class}</td>
+                            <td className="px-5 py-3 text-center text-red-600 font-black">{parseFloat(String(s.scores["TB THI"]).replace(',', '.')).toFixed(2)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1778,26 +2351,26 @@ export default function App() {
                         {stats.detailedSubjectStats.map(sub => (
                           <tr key={sub.name} className="hover:bg-bento-accent/[0.02] divide-x divide-bento-border">
                             <td className="px-6 py-4 font-black text-bento-text uppercase text-sm">{sub.name}</td>
-                            <td className="px-6 py-4 font-mono text-center font-black text-lg text-bento-text">{sub.participated}</td>
+                            <td className="px-6 py-4 font-sans text-center font-black text-lg text-bento-text">{sub.participated}</td>
                             <td className="px-6 py-4 text-center bg-red-50/50">
-                              <span className="font-mono font-black text-red-600 text-xl">{sub.liet}</span>
+                              <span className="font-sans font-black text-red-600 text-xl">{sub.liet}</span>
                               <br />
-                              <span className="text-[14px] text-red-700 font-black">({sub.lietRate.toFixed(1)}%)</span>
+                              <span className="text-[14px] text-red-700 font-black">({sub.lietRate.toFixed(2)}%)</span>
                             </td>
                             <td className="px-6 py-4 text-center bg-orange-50/50">
-                              <span className="font-mono font-black text-orange-600 text-xl">{sub.zeroToTwo}</span>
+                              <span className="font-sans font-black text-orange-600 text-xl">{sub.zeroToTwo}</span>
                               <br />
-                              <span className="text-[14px] text-orange-700 font-black">({sub.zeroToTwoRate.toFixed(1)}%)</span>
+                              <span className="text-[14px] text-orange-700 font-black">({sub.zeroToTwoRate.toFixed(2)}%)</span>
                             </td>
                             <td className="px-6 py-4 text-center bg-bento-bg/30">
-                              <span className="font-mono font-black text-bento-text text-xl">{sub.belowAvg}</span>
+                              <span className="font-sans font-black text-bento-text text-xl">{sub.belowAvg}</span>
                               <br />
-                              <span className="text-[14px] text-bento-subtext font-black">({sub.belowAvgRate.toFixed(1)}%)</span>
+                              <span className="text-[14px] text-bento-subtext font-black">({sub.belowAvgRate.toFixed(2)}%)</span>
                             </td>
                             <td className="px-6 py-4 text-center bg-green-50/20">
-                              <span className="font-mono font-black text-bento-success text-xl">{sub.aboveAvg}</span>
+                              <span className="font-sans font-black text-bento-success text-xl">{sub.aboveAvg}</span>
                               <br />
-                              <span className="text-[14px] text-bento-success font-black">({sub.aboveAvgRate.toFixed(1)}%)</span>
+                              <span className="text-[14px] text-bento-success font-black">({sub.aboveAvgRate.toFixed(2)}%)</span>
                             </td>
                           </tr>
                         ))}
@@ -1871,11 +2444,43 @@ export default function App() {
                         <tbody className="divide-y divide-bento-border">
                           {calculateSubjectDetailedStats.topStudents.map((student, idx) => (
                             <tr key={student.sbd} className="hover:bg-emerald-50/20 transition-colors">
-                              <td className="px-6 py-2.5 font-mono text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
-                              <td className="px-6 py-2.5 font-mono font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
+                              <td className="px-6 py-2.5 font-sans text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
+                              <td className="px-6 py-2.5 font-sans font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
                               <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border whitespace-nowrap">{student.name}</td>
                               <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border">{student.class}</td>
-                              <td className="px-6 py-2.5 font-mono font-black text-center text-lg text-emerald-600">{student.score.toFixed(2)}</td>
+                              <td className="px-6 py-2.5 font-sans font-black text-center text-lg text-emerald-600">{student.score.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Subject Bottom Students Table */}
+                  <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm mt-8">
+                    <div className="bg-red-50 px-6 py-4 border-b border-red-100 flex items-center gap-2">
+                      <TrendingDown size={16} className="text-red-600" />
+                      <h3 className="text-[12px] font-black text-red-900 uppercase tracking-widest">DANH SÁCH HỌC SINH CÓ ĐIỂM THI THẤP MÔN {selectedSubject.toUpperCase()}</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-[14px]">
+                        <thead>
+                          <tr className="bg-red-50/30 border-b border-bento-border text-[12px]">
+                            <th className="px-6 py-3 font-black text-bento-subtext text-center w-16 border-r border-bento-border">TT</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">SBD</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">HỌ VÀ TÊN</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">LỚP</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext text-center">ĐIỂM THI</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-bento-border">
+                          {calculateSubjectDetailedStats.bottomStudents.map((student, idx) => (
+                            <tr key={student.sbd} className="hover:bg-red-50/20 transition-colors">
+                              <td className="px-6 py-2.5 font-sans text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
+                              <td className="px-6 py-2.5 font-sans font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
+                              <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border whitespace-nowrap">{student.name}</td>
+                              <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border">{student.class}</td>
+                              <td className="px-6 py-2.5 font-sans font-black text-center text-lg text-red-600">{student.score.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1914,29 +2519,29 @@ export default function App() {
                           {calculateSubjectDetailedStats.classData.map((cls, idx) => (
                             <tr key={idx} className="hover:bg-bento-accent/[0.02]">
                               <td className="px-6 py-3 font-black text-bento-text border-r border-bento-border whitespace-nowrap">{cls.className}</td>
-                              <td className="px-6 py-3 font-mono font-bold text-center border-r border-bento-border">{cls.total}</td>
+                              <td className="px-6 py-3 font-sans font-bold text-center border-r border-bento-border">{cls.total}</td>
                               {cls.stats.map((s, si) => (
                                 <React.Fragment key={si}>
-                                  <td className="px-4 py-3 font-mono text-center border-r border-bento-border">{s.count}</td>
-                                  <td className="px-4 py-3 font-mono text-center font-bold text-bento-accent border-r border-bento-border last:border-r-0">{s.rate > 0 ? s.rate.toFixed(1) : "-"}</td>
+                                  <td className="px-4 py-3 font-sans text-center border-r border-bento-border">{s.count}</td>
+                                  <td className="px-4 py-3 font-sans text-center font-bold text-bento-accent border-r border-bento-border last:border-r-0">{s.rate > 0 ? s.rate.toFixed(2) : "-"}</td>
                                 </React.Fragment>
                               ))}
-                              <td className="px-4 py-3 font-mono text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/20 font-bold text-emerald-700">{cls.aboveFive.count}</td>
-                              <td className="px-4 py-3 font-mono text-center font-black text-emerald-600 bg-emerald-50/20">{cls.aboveFive.rate > 0 ? cls.aboveFive.rate.toFixed(1) : "-"}</td>
+                              <td className="px-4 py-3 font-sans text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/20 font-bold text-emerald-700">{cls.aboveFive.count}</td>
+                              <td className="px-4 py-3 font-sans text-center font-black text-emerald-600 bg-emerald-50/20">{cls.aboveFive.rate > 0 ? cls.aboveFive.rate.toFixed(2) : "-"}</td>
                             </tr>
                           ))}
                           {/* Total Row */}
                           <tr className="bg-bento-accent/[0.05] font-bold">
                             <td className="px-6 py-4 font-black text-bento-accent border-r border-bento-border uppercase">TỔNG</td>
-                            <td className="px-6 py-4 font-mono font-black text-center border-r border-bento-border text-lg">{calculateSubjectDetailedStats.total}</td>
+                            <td className="px-6 py-4 font-sans font-black text-center border-r border-bento-border text-lg">{calculateSubjectDetailedStats.total}</td>
                             {calculateSubjectDetailedStats.totalRangeStats.map((s, si) => (
                               <React.Fragment key={si}>
-                                <td className="px-4 py-4 font-mono text-center border-r border-bento-border text-lg">{s.count}</td>
-                                <td className="px-4 py-4 font-mono text-center font-black text-bento-accent border-r border-bento-border last:border-r-0 text-lg">{s.rate.toFixed(1)}%</td>
+                                <td className="px-4 py-4 font-sans text-center border-r border-bento-border text-lg">{s.count}</td>
+                                <td className="px-4 py-4 font-sans text-center font-black text-bento-accent border-r border-bento-border last:border-r-0 text-lg">{s.rate.toFixed(2)}%</td>
                               </React.Fragment>
                             ))}
-                            <td className="px-4 py-4 font-mono text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/50 text-emerald-700 text-lg font-black">{calculateSubjectDetailedStats.totalAboveFive.count}</td>
-                            <td className="px-4 py-4 font-mono text-center font-black text-emerald-600 bg-emerald-50/50 text-lg">{calculateSubjectDetailedStats.totalAboveFive.rate.toFixed(1)}%</td>
+                            <td className="px-4 py-4 font-sans text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/50 text-emerald-700 text-lg font-black">{calculateSubjectDetailedStats.totalAboveFive.count}</td>
+                            <td className="px-4 py-4 font-sans text-center font-black text-emerald-600 bg-emerald-50/50 text-lg">{calculateSubjectDetailedStats.totalAboveFive.rate.toFixed(2)}%</td>
                           </tr>
                         </tbody>
                       </table>
@@ -2080,10 +2685,10 @@ export default function App() {
                           <tbody className="divide-y divide-bento-border">
                             {calculateClassDetailedStats.failedGradStudents.map((student, idx) => (
                               <tr key={student.sbd} className="hover:bg-red-50/20 transition-colors">
-                                <td className="px-6 py-2.5 font-mono text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
-                                <td className="px-6 py-2.5 font-mono font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
+                                <td className="px-6 py-2.5 font-sans text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
+                                <td className="px-6 py-2.5 font-sans font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
                                 <td className="px-4 py-2.5 font-bold text-bento-text border-r border-bento-border whitespace-nowrap">{student.name}</td>
-                                <td className="px-6 py-2.5 font-mono font-black text-center text-red-600 border-r border-bento-border">{String(student.scores["XÉT TN"]).replace(',', '.')}</td>
+                                <td className="px-6 py-2.5 font-sans font-black text-center text-red-600 border-r border-bento-border">{String(student.scores["XÉT TN"]).replace(',', '.')}</td>
                                 <td className="px-6 py-2.5 text-xs font-bold text-red-700 italic">
                                   {getFailReason(student)}
                                 </td>
@@ -2115,11 +2720,41 @@ export default function App() {
                         <tbody className="divide-y divide-bento-border">
                           {calculateClassDetailedStats.topStudentsByAvg.map((student, idx) => (
                             <tr key={student.sbd} className="hover:bg-emerald-50/20 transition-colors">
-                              <td className="px-6 py-2.5 font-mono text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
-                              <td className="px-6 py-2.5 font-mono font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
+                              <td className="px-6 py-2.5 font-sans text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
+                              <td className="px-6 py-2.5 font-sans font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
                               <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border whitespace-nowrap">{student.name}</td>
                               <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border">{student.class}</td>
-                              <td className="px-6 py-2.5 font-mono font-black text-center text-lg text-emerald-600">{(student as any).avgScore.toFixed(2)}</td>
+                              <td className="px-6 py-2.5 font-sans font-black text-center text-lg text-emerald-600">{(student as any).avgScore.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Class Bottom Students Table */}
+                  <div className="bg-bento-card border border-bento-border rounded-2xl overflow-hidden shadow-sm mt-8">
+                    <div className="bg-red-50 px-6 py-4 border-b border-red-100 flex items-center gap-2">
+                       <TrendingDown size={16} className="text-red-600" />
+                       <h3 className="text-[11px] font-black text-red-900 uppercase tracking-widest">DANH SÁCH HỌC SINH CÓ TRUNG BÌNH ĐIỂM THI THẤP</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-[13px]">
+                        <thead>
+                          <tr className="bg-red-50/30 border-b border-bento-border text-[11px]">
+                            <th className="px-6 py-3 font-black text-bento-subtext text-center w-16 border-r border-bento-border">TT</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">SBD</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext border-r border-bento-border">HỌ VÀ TÊN</th>
+                            <th className="px-6 py-3 font-black text-bento-subtext text-center">ĐIỂM TB THI</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-bento-border">
+                          {calculateClassDetailedStats.bottomStudentsByAvg.map((student, idx) => (
+                            <tr key={student.sbd} className="hover:bg-red-50/20 transition-colors">
+                              <td className="px-6 py-2.5 font-sans text-center text-bento-subtext border-r border-bento-border">{idx + 1}</td>
+                              <td className="px-6 py-2.5 font-sans font-bold text-bento-text border-r border-bento-border">{student.sbd}</td>
+                              <td className="px-6 py-2.5 font-bold text-bento-text border-r border-bento-border whitespace-nowrap uppercase">{student.name}</td>
+                              <td className="px-6 py-2.5 font-sans font-black text-center text-lg text-red-600">{(student as any).avgScore.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2158,15 +2793,15 @@ export default function App() {
                           {calculateClassDetailedStats.subjectStats.map((sub, idx) => (
                             <tr key={idx} className="hover:bg-bento-accent/[0.02]">
                               <td className="px-6 py-3 font-black text-bento-text border-r border-bento-border whitespace-nowrap">{sub.subject}</td>
-                              <td className="px-6 py-3 font-mono font-bold text-center border-r border-bento-border">{sub.total}</td>
+                              <td className="px-6 py-3 font-sans font-bold text-center border-r border-bento-border">{sub.total}</td>
                               {sub.stats.map((s, si) => (
                                 <React.Fragment key={si}>
-                                  <td className="px-4 py-3 font-mono text-center border-r border-bento-border">{s.count}</td>
-                                  <td className="px-4 py-3 font-mono text-center font-bold text-bento-accent border-r border-bento-border last:border-r-0">{s.rate > 0 ? s.rate.toFixed(1) : "-"}</td>
+                                  <td className="px-4 py-3 font-sans text-center border-r border-bento-border">{s.count}</td>
+                                  <td className="px-4 py-3 font-sans text-center font-bold text-bento-accent border-r border-bento-border last:border-r-0">{s.rate > 0 ? s.rate.toFixed(1) : "-"}</td>
                                 </React.Fragment>
                               ))}
-                              <td className="px-4 py-3 font-mono text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/20 font-bold text-emerald-700">{sub.aboveFive.count}</td>
-                              <td className="px-4 py-3 font-mono text-center font-black text-emerald-600 bg-emerald-50/20">{sub.aboveFive.rate > 0 ? sub.aboveFive.rate.toFixed(1) : "-"}</td>
+                              <td className="px-4 py-3 font-sans text-center border-r border-bento-border border-l-2 border-emerald-200 bg-emerald-50/20 font-bold text-emerald-700">{sub.aboveFive.count}</td>
+                              <td className="px-4 py-3 font-sans text-center font-black text-emerald-600 bg-emerald-50/20">{sub.aboveFive.rate > 0 ? sub.aboveFive.rate.toFixed(1) : "-"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2259,19 +2894,19 @@ export default function App() {
                           <tr key={idx} className="hover:bg-slate-50/50 divide-x divide-bento-border transition-colors">
                             <td className="px-6 py-4 font-black text-slate-700 uppercase tracking-tighter sticky left-0 bg-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-bento-border">{row.subject}</td>
                             
-                            <td className="px-4 py-4 font-mono font-bold text-center text-slate-600">{row.rate1.toFixed(1)}%</td>
-                            <td className="px-4 py-4 font-mono font-black text-center text-slate-800 bg-slate-50/30">{row.rate2.toFixed(1)}%</td>
+                            <td className="px-4 py-4 font-sans font-bold text-center text-slate-600">{row.rate1.toFixed(2)}%</td>
+                            <td className="px-4 py-4 font-sans font-black text-center text-slate-800 bg-slate-50/30">{row.rate2.toFixed(2)}%</td>
                             <td className={cn(
-                              "px-4 py-4 font-mono font-black text-center",
+                              "px-4 py-4 font-sans font-black text-center",
                               rateDiff > 0 ? "text-emerald-600 bg-emerald-50/20" : rateDiff < 0 ? "text-red-600 bg-red-50/20" : "text-slate-400"
                             )}>
-                              {rateDiff > 0 ? `+${rateDiff.toFixed(1)}` : rateDiff.toFixed(1)}%
+                              {rateDiff > 0 ? `+${rateDiff.toFixed(2)}` : rateDiff.toFixed(2)}%
                             </td>
 
-                            <td className="px-4 py-4 font-mono font-bold text-center text-slate-600">{row.score1.toFixed(2)}</td>
-                            <td className="px-4 py-4 font-mono font-black text-center text-slate-800 bg-slate-50/30">{row.score2.toFixed(2)}</td>
+                            <td className="px-4 py-4 font-sans font-bold text-center text-slate-600">{row.score1.toFixed(2)}</td>
+                            <td className="px-4 py-4 font-sans font-black text-center text-slate-800 bg-slate-50/30">{row.score2.toFixed(2)}</td>
                             <td className={cn(
-                              "px-4 py-4 font-mono font-black text-center",
+                              "px-4 py-4 font-sans font-black text-center",
                               scoreDiff > 0 ? "text-emerald-600 bg-emerald-50/20" : scoreDiff < 0 ? "text-red-600 bg-red-50/20" : "text-slate-400"
                             )}>
                               {scoreDiff > 0 ? `+${scoreDiff.toFixed(2)}` : scoreDiff.toFixed(2)}
@@ -2464,7 +3099,7 @@ export default function App() {
                                           const value = cell !== undefined && cell !== null ? cell : "";
                                           const displayVal = typeof value === 'number' ? value.toLocaleString('en-US') : value;
                                           if (cIdx === 0) return <td key={cIdx} className="px-3 py-3 font-black text-slate-700 text-left sticky left-0 bg-white whitespace-nowrap border-r border-bento-border shadow-[2px_0_5px_rgba(0,0,0,0.05)]">{displayVal}</td>;
-                                          if (cIdx === 1) return <td key={cIdx} className="px-3 py-3 text-center font-mono font-black text-slate-800 bg-slate-50/50">{displayVal}</td>;
+                                          if (cIdx === 1) return <td key={cIdx} className="px-3 py-3 text-center font-sans font-black text-slate-800 bg-slate-50/50">{displayVal}</td>;
                                           const numVal = typeof cell === 'number' ? cell : parseFloat(String(cell));
                                           const percentage = (!isNaN(numVal) && totalStudents > 0) ? ((numVal / totalStudents) * 100).toFixed(1) : "0.0";
                                           
@@ -2519,17 +3154,17 @@ export default function App() {
 
                                             return (
                                               <React.Fragment key={cIdx}>
-                                                <td className="px-2 py-3 text-center font-mono font-black text-bento-text">{displayVal}</td>
-                                                <td className="px-2 py-3 text-center font-mono font-black text-red-600 bg-red-50/20">{percentage}%</td>
-                                                <td key="pvd_td" className="px-2 py-3 text-center font-mono font-black text-red-700 bg-red-100/40">{pvdRateValue === "-" ? "-" : pvdRateValue + "%"}</td>
+                                                <td className="px-2 py-3 text-center font-sans font-black text-bento-text">{displayVal}</td>
+                                                <td className="px-2 py-3 text-center font-sans font-black text-red-600 bg-red-50/20">{percentage}%</td>
+                                                <td key="pvd_td" className="px-2 py-3 text-center font-sans font-black text-red-700 bg-red-100/40">{pvdRateValue === "-" ? "-" : pvdRateValue + "%"}</td>
                                               </React.Fragment>
                                             );
                                           }
 
                                           return (
                                             <React.Fragment key={cIdx}>
-                                              <td className="px-2 py-3 text-center font-mono font-black text-bento-text">{displayVal}</td>
-                                              <td className="px-2 py-3 text-center font-mono font-black text-red-600 bg-red-50/20">{percentage}%</td>
+                                              <td className="px-2 py-3 text-center font-sans font-black text-bento-text">{displayVal}</td>
+                                              <td className="px-2 py-3 text-center font-sans font-black text-red-600 bg-red-50/20">{percentage}%</td>
                                             </React.Fragment>
                                           );
                                         })}
@@ -2738,7 +3373,7 @@ export default function App() {
                                                 <th className="text-center py-2 font-black text-red-600 uppercase italic">PVĐ</th>
                                               </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-slate-100 font-mono">
+                                            <tbody className="divide-y divide-slate-100 font-sans">
                                               <tr>
                                                 <td className="py-4 font-bold text-slate-600">SỐ THÍ SINH</td>
                                                 <td className="text-center font-black text-slate-900">{currentInfo.total}</td>
@@ -2817,7 +3452,7 @@ export default function App() {
                                         : (!isNaN(parseFloat(String(rawVal))) ? parseFloat(String(rawVal)).toLocaleString('en-US') : rawVal);
 
                                       return (
-                                        <td key={vIdx} className="px-2 py-3 text-center font-mono font-black text-bento-text border-r border-bento-border last:border-r-0 text-xs">
+                                        <td key={vIdx} className="px-2 py-3 text-center font-sans font-black text-bento-text border-r border-bento-border last:border-r-0 text-xs">
                                           {displayVal}
                                         </td>
                                       );
@@ -2845,6 +3480,456 @@ export default function App() {
           )}
         </motion.div>
       )}
+          {activeTab === "compare_2025" && (
+            <motion.div 
+              key="compare_2025"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="col-span-1 md:col-span-4 space-y-6"
+            >
+              <div className="bg-bento-card border border-bento-border p-8 rounded-2xl shadow-sm">
+                <h3 className="text-2xl font-black text-bento-text uppercase tracking-tight">SO SÁNH THÔNG TIN NĂM 2025</h3>
+                <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest mt-1">Hệ thống phân tích và đối sánh dữ liệu năm học 2025</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { id: "avg_score", title: "SO SÁNH TRUNG BÌNH ĐIỂM THI CÁC MÔN", icon: <BarChart3 size={32} />, color: "bg-blue-600" },
+                  { id: "academic_results", title: "SO SÁNH KẾT QUẢ HỌC TẬP", icon: <Users size={32} />, color: "bg-emerald-600" },
+                  { id: "target_score", title: "DANH SÁCH HỌC SINH CÓ NGUY CƠ", icon: <Trophy size={32} />, color: "bg-orange-600" }
+                ].map((item, idx) => (
+                  <motion.div 
+                    key={idx}
+                    whileHover={{ y: -5 }}
+                    onClick={() => setActiveSubTab2025(item.id)}
+                    className="bg-bento-card border border-bento-border p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all cursor-pointer group"
+                  >
+                    <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-white shadow-lg transition-transform group-hover:scale-110", item.color)}>
+                      {item.icon}
+                    </div>
+                    <h4 className="text-sm font-black text-bento-text uppercase tracking-tight mb-3 leading-tight">{item.title}</h4>
+                    <div className="mt-8 flex items-center justify-between text-bento-accent">
+                      <span className="text-[9px] font-black uppercase tracking-widest group-hover:translate-x-2 transition-transform inline-flex items-center gap-2">
+                        Truy cập ngay <ChevronRight size={14} />
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              {activeSubTab2025 === "avg_score" && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-white p-8 rounded-2xl border border-bento-border shadow-sm">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <button onClick={() => setActiveSubTab2025(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-bento-accent">
+                          <ChevronRight size={18} className="rotate-180" />
+                        </button>
+                        <h3 className="text-xl font-black text-bento-text uppercase tracking-tight">SO SÁNH TRUNG BÌNH ĐIỂM THI CÁC MÔN</h3>
+                      </div>
+                      <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest pl-11">Bảng so sánh điểm trung bình môn thi tốt nghiệp THPT</p>
+                    </div>
+
+                    <div className={cn("flex flex-wrap gap-3 w-full lg:w-auto", role !== 'admin' && "blur-[2px] pointer-events-none opacity-50")}>
+                      <div className="relative">
+                        <input 
+                          type="file" 
+                          id="avg-2025-import" 
+                          className="hidden" 
+                          accept=".xlsx, .xls"
+                          onChange={handleImportAvgScore2025}
+                          disabled={role !== 'admin'}
+                        />
+                        <label 
+                          htmlFor="avg-2025-import"
+                          className={cn(
+                            "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg",
+                            role === 'admin' 
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10" 
+                              : "bg-emerald-600/20 text-emerald-600/50 cursor-not-allowed"
+                          )}
+                        >
+                          <Download size={14} className="rotate-180" /> IMPORT
+                        </label>
+                      </div>
+
+                      <button 
+                        onClick={handleUpdateAvgScore2025}
+                        disabled={role !== 'admin' || updatingAvgScore2025 || !tempAvgScore2025}
+                        className={cn(
+                          "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg",
+                          role === 'admin' && !updatingAvgScore2025 && tempAvgScore2025
+                            ? "bg-bento-accent hover:bg-bento-accent/90 text-white shadow-bento-accent/10" 
+                            : "bg-bento-accent/20 text-bento-accent/50 cursor-not-allowed"
+                        )}
+                      >
+                        {updatingAvgScore2025 ? "ĐANG CẬP NHẬT..." : "CẬP NHẬT"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-bento-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-[13px] border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-bento-border">
+                            <th className="px-6 py-5 font-black text-slate-700 uppercase tracking-tighter w-40">MÔN</th>
+                            <th className="px-6 py-5 font-black text-slate-700 uppercase tracking-tighter text-center">ĐTB MÔN THI (TRƯỜNG)</th>
+                            <th className="px-6 py-5 font-black text-slate-700 uppercase tracking-tighter text-center">ĐTB MÔN THI (TỈNH)</th>
+                            <th className="px-6 py-5 font-black text-slate-700 uppercase tracking-tighter text-center">CHÊNH LỆCH</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-bento-border">
+                          {avgScore2025Data.length > 0 ? avgScore2025Data.map((row, idx) => {
+                            const diff = row.school - row.province;
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4 font-black text-slate-700 uppercase tracking-tighter">{row.subject}</td>
+                                <td className="px-6 py-4 font-sans font-bold text-center text-slate-600">{row.school.toFixed(2)}</td>
+                                <td className="px-6 py-4 font-sans font-bold text-center text-slate-600">{row.province.toFixed(2)}</td>
+                                <td className={cn(
+                                  "px-6 py-4 font-sans font-black text-center",
+                                  diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-600" : "text-slate-400"
+                                )}>
+                                  {diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          }) : (
+                            <tr>
+                              <td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+                                <BarChart3 size={40} className="mx-auto mb-4 opacity-20" />
+                                Chưa có dữ liệu so sánh trung bình điểm
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeSubTab2025 === "academic_results" && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-white p-8 rounded-2xl border border-bento-border shadow-sm">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <button onClick={() => setActiveSubTab2025(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-bento-accent">
+                          <ChevronRight size={18} className="rotate-180" />
+                        </button>
+                        <h3 className="text-xl font-black text-bento-text uppercase tracking-tight">DANH SÁCH HỌC SINH CÓ KẾT QUẢ HỌC TẬP THẤP NHẤT</h3>
+                      </div>
+                      <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest pl-11">So sánh kết quả học tập giữa năm học 2025 và 2026</p>
+                    </div>
+
+                    <div className={cn("flex flex-wrap gap-3 w-full lg:w-auto", role !== 'admin' && "blur-[2px] pointer-events-none opacity-50")}>
+                      <div className="relative">
+                        <input 
+                          type="file" 
+                          id="academic-2025-import" 
+                          className="hidden" 
+                          accept=".xlsx, .xls"
+                          onChange={handleImportAcademicResults2025}
+                          disabled={role !== 'admin'}
+                        />
+                        <label 
+                          htmlFor="academic-2025-import"
+                          className={cn(
+                            "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg",
+                            role === 'admin' 
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10" 
+                              : "bg-emerald-600/20 text-emerald-600/50 cursor-not-allowed"
+                          )}
+                        >
+                          <Download size={14} className="rotate-180" /> IMPORT
+                        </label>
+                      </div>
+
+                      <button 
+                        onClick={handleUpdateAcademicResults2025}
+                        disabled={role !== 'admin' || updatingAcademicResults || !tempAcademicResults}
+                        className={cn(
+                          "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg",
+                          role === 'admin' && !updatingAcademicResults && tempAcademicResults
+                            ? "bg-bento-accent hover:bg-bento-accent/90 text-white shadow-bento-accent/10" 
+                            : "bg-bento-accent/20 text-bento-accent/50 cursor-not-allowed"
+                        )}
+                      >
+                        {updatingAcademicResults ? "ĐANG CẬP NHẬT..." : "CẬP NHẬT"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-bento-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-auto max-h-[700px] min-h-[400px]">
+                      {academicResultsData && academicResultsData.length > 0 ? (
+                        <table className="w-full text-left text-[12px] border-collapse bg-white">
+                          <thead>
+                            <tr className="sticky top-0 z-20 shadow-sm">
+                              {academicResultsData[0].map((header: any, hIdx: number) => (
+                                <th key={hIdx} className="px-4 py-4 font-black text-slate-700 uppercase tracking-tighter border-r border-b border-bento-border bg-slate-100 whitespace-nowrap sticky top-0 z-20">
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-bento-border uppercase font-bold text-slate-600">
+                            {academicResultsData.slice(1).map((row: any, rIdx: number) => {
+                               const headers = academicResultsData[0];
+                               
+                               return (
+                                <tr key={rIdx} className={cn("hover:bg-slate-50/50 transition-colors", rIdx % 2 === 1 ? "bg-slate-50/10" : "")}>
+                                  {row.map((cell: any, cIdx: number) => {
+                                    const headerName = String(headers[cIdx] || "").toUpperCase();
+                                    const isLech1 = headerName === "LỆCH1" || headerName === "LỆCH 1";
+                                    const isLech2 = headerName === "LỆCH2" || headerName === "LỆCH 2";
+                                    const isAnyLech = isLech1 || isLech2 || headerName.includes("LỆCH");
+                                    
+                                    const numVal = typeof cell === 'number' ? cell : parseFloat(String(cell || "").replace(',', '.'));
+                                    const isScoreColumn = !headerName.includes("TT") && !headerName.includes("SBD") && !headerName.includes("LỚP") && !headerName.includes("HỌ");
+                                    
+                                    let cellStyles = "";
+                                    if (isLech1) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-emerald-600 bg-emerald-50/30";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-red-600 bg-red-50/30";
+                                      else if (!isNaN(numVal) && numVal === 0) cellStyles = "text-slate-400 font-normal";
+                                    } else if (isLech2) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-red-600 bg-red-50/30";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-emerald-600 bg-emerald-50/30";
+                                      else if (!isNaN(numVal) && numVal === 0) cellStyles = "text-slate-400 font-normal";
+                                    } else if (isAnyLech) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-emerald-600 bg-emerald-50/10";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-red-600 bg-red-50/10";
+                                    }
+
+                                    return (
+                                      <td key={cIdx} className={cn(
+                                        "px-4 py-3 border-r border-bento-border transition-all whitespace-nowrap",
+                                        isAnyLech ? "font-sans font-black text-center" : "",
+                                        cellStyles
+                                      )}>
+                                        {(isScoreColumn || isAnyLech) && !isNaN(numVal) && cell !== "" && cell !== null ? numVal.toFixed(2) : cell}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                               );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-24 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+                           <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mb-6">
+                             <Users size={40} className="opacity-20" />
+                           </div>
+                           Chưa có dữ liệu danh sách học sinh
+                           <p className="font-normal text-[9px] mt-2 italic">Admin vui lòng Import file dữ liệu để hiển thị</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeSubTab2025 === "target_score" && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 bg-white p-8 rounded-2xl border border-bento-border shadow-sm">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <button onClick={() => setActiveSubTab2025(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-bento-accent">
+                          <ChevronRight size={18} className="rotate-180" />
+                        </button>
+                        <h3 className="text-xl font-black text-bento-text uppercase tracking-tight">DANH SÁCH HỌC SINH CÓ NGUY CƠ</h3>
+                      </div>
+                      <p className="text-xs text-bento-subtext font-bold uppercase tracking-widest pl-11">Danh sách học sinh có nguy cơ dựa trên kết quả học tập</p>
+                    </div>
+
+                    <div className={cn("flex flex-wrap gap-3 w-full lg:w-auto", role !== 'admin' && "blur-[2px] pointer-events-none opacity-50")}>
+                      <div className="relative">
+                        <input 
+                          type="file" 
+                          id="target-2025-import" 
+                          className="hidden" 
+                          accept=".xlsx, .xls"
+                          onChange={handleImportTargetScore2025}
+                          disabled={role !== 'admin'}
+                        />
+                        <label 
+                          htmlFor="target-2025-import"
+                          className={cn(
+                            "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg",
+                            role === 'admin' 
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10" 
+                              : "bg-emerald-600/20 text-emerald-600/50 cursor-not-allowed"
+                          )}
+                        >
+                          <Download size={14} className="rotate-180" /> IMPORT
+                        </label>
+                      </div>
+
+                      <button 
+                        onClick={handleUpdateTargetScore2025}
+                        disabled={role !== 'admin' || updatingTargetScore || !tempTargetScore}
+                        className={cn(
+                          "flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg",
+                          role === 'admin' && !updatingTargetScore && tempTargetScore
+                            ? "bg-bento-accent hover:bg-bento-accent/90 text-white shadow-bento-accent/10" 
+                            : "bg-bento-accent/20 text-bento-accent/50 cursor-not-allowed"
+                        )}
+                      >
+                        {updatingTargetScore ? "ĐANG CẬP NHẬT..." : "CẬP NHẬT"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Risk Stats Summary Table - Moved here */}
+                  {riskStatsPerClass && (riskStatsPerClass as any).classes && (
+                    <div className="w-full flex justify-center">
+                      <div className="bg-white border-2 border-bento-accent/20 rounded-xl overflow-hidden shadow-sm max-w-4xl w-full">
+                        <table className="w-full text-center border-collapse text-[12px]">
+                          <thead>
+                            <tr className="bg-bento-accent/5 border-b border-bento-accent/10">
+                              <th className="px-4 py-2 font-black text-slate-700 uppercase tracking-tighter border-r border-bento-accent/10 text-[11px]">LỚP</th>
+                              {(riskStatsPerClass as any).classes.map((cls: string) => (
+                                <th key={cls} className="px-4 py-2 font-black text-slate-700 uppercase tracking-tighter border-r border-bento-accent/10 text-[11px] last:border-r-0">{cls}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="divide-x divide-bento-accent/10">
+                              <td className="px-4 py-2 font-black text-slate-500 uppercase tracking-tighter text-[10px] bg-slate-50/50">Số HS nguy cơ</td>
+                              {(riskStatsPerClass as any).counts.map((count: number, idx: number) => (
+                                <td key={idx} className="px-4 py-2 font-sans font-black text-bento-accent text-lg">{count}</td>
+                              ))}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filter and Export Bar */}
+                  <div className="flex flex-col md:flex-row items-center justify-center gap-4 py-2">
+                    <div className="relative w-full md:w-64">
+                      <select
+                        value={classFilter2025}
+                        onChange={(e) => setClassFilter2025(e.target.value)}
+                        className="w-full px-6 py-3 rounded-xl bg-white border border-bento-border text-slate-700 font-black text-[11px] uppercase tracking-widest focus:ring-2 focus:ring-bento-accent/50 focus:border-bento-accent outline-none appearance-none cursor-pointer text-center"
+                      >
+                        <option value="CHỌN LỚP">CHỌN LỚP</option>
+                        <option value="TẤT CẢ">TẤT CẢ</option>
+                        {Array.from({ length: 8 }, (_, i) => `12C${i + 1}`).map(cls => (
+                          <option key={cls} value={cls}>{cls}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                        <ChevronRight size={14} className="rotate-90" />
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={handleExportRiskExcel}
+                      disabled={!targetScoreData || targetScoreData.length === 0}
+                      className={cn(
+                        "flex items-center gap-2 px-8 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg",
+                        targetScoreData && targetScoreData.length > 0
+                          ? "bg-slate-700 hover:bg-slate-800 text-white shadow-slate-700/10"
+                          : "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                      )}
+                    >
+                      <Download size={14} /> XUẤT EXCEL
+                    </button>
+                  </div>
+
+                  <div className="bg-white border border-bento-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-auto max-h-[700px] min-h-[400px]">
+                      {targetScoreData && targetScoreData.length > 0 ? (
+                        <table className="w-full text-left text-[12px] border-collapse bg-white">
+                          <thead>
+                            <tr className="sticky top-0 z-20 shadow-sm">
+                              {targetScoreData[0].map((header: any, hIdx: number) => (
+                                <th key={hIdx} className="px-4 py-4 font-black text-slate-700 uppercase tracking-tighter border-r border-b border-bento-border bg-slate-100 whitespace-nowrap sticky top-0 z-20">
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-bento-border uppercase font-bold text-slate-600">
+                            {getFilteredRiskData().map((row: any, rIdx: number) => {
+                               const headers = targetScoreData[0];
+
+                               return (
+                                <tr key={rIdx} className={cn("hover:bg-slate-50/50 transition-colors", rIdx % 2 === 1 ? "bg-slate-50/10" : "")}>
+                                  {row.map((cell: any, cIdx: number) => {
+                                    const headerName = String(headers[cIdx] || "").toUpperCase();
+                                    const isLech1 = headerName === "LỆCH1" || headerName === "LỆCH 1";
+                                    const isLech2 = headerName === "LỆCH2" || headerName === "LỆCH 2";
+                                    const isAnyLech = isLech1 || isLech2 || headerName.includes("LỆCH");
+                                    
+                                    const numVal = typeof cell === 'number' ? cell : parseFloat(String(cell || "").replace(',', '.'));
+                                    const isScoreColumn = !headerName.includes("TT") && !headerName.includes("SBD") && !headerName.includes("LỚP") && !headerName.includes("HỌ");
+                                    const isMinTotalScore = headerName.includes("TỔNG ĐIỂM THI TỐI THIỂU");
+                                    
+                                    let cellStyles = "";
+                                    if (isMinTotalScore) {
+                                      cellStyles = "text-red-600 font-black bg-red-50/20";
+                                    } else if (isLech1) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-emerald-600 bg-emerald-50/30";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-red-600 bg-red-50/30";
+                                      else if (!isNaN(numVal) && numVal === 0) cellStyles = "text-slate-400 font-normal";
+                                    } else if (isLech2) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-red-600 bg-red-50/30";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-emerald-600 bg-emerald-50/30";
+                                      else if (!isNaN(numVal) && numVal === 0) cellStyles = "text-slate-400 font-normal";
+                                    } else if (isAnyLech) {
+                                      if (!isNaN(numVal) && numVal > 0) cellStyles = "text-emerald-600 bg-emerald-50/10";
+                                      else if (!isNaN(numVal) && numVal < 0) cellStyles = "text-red-600 bg-red-50/10";
+                                    }
+
+                                    return (
+                                      <td key={cIdx} className={cn(
+                                        "px-4 py-3 border-r border-bento-border transition-all whitespace-nowrap",
+                                        (isAnyLech || isMinTotalScore) ? "font-sans font-black text-center" : "",
+                                        cellStyles
+                                      )}>
+                                        {(isScoreColumn || isAnyLech || isMinTotalScore) && !isNaN(numVal) && cell !== "" && cell !== null ? numVal.toFixed(2) : cell}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                               );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-24 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+                           <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mb-6">
+                             <Users size={40} className="opacity-20" />
+                           </div>
+                           Chưa có dữ liệu danh sách học sinh
+                           <p className="font-normal text-[9px] mt-2 italic">Admin vui lòng Import file dữ liệu để hiển thị</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
         </AnimatePresence>
       </main>
     </div>
@@ -2866,7 +3951,7 @@ function SummaryCard({ label, value, rate, color = "accent" }: { label: string, 
       <div className="flex items-baseline gap-2">
         <p className={cn("text-4xl font-black", colorMap[color] ? colorMap[color].split(' ')[0] : "text-bento-text")}>{value}</p>
         {rate !== undefined && (
-          <p className="text-lg font-black text-bento-subtext opacity-50">({rate.toFixed(1)}%)</p>
+          <p className="text-lg font-black text-bento-subtext opacity-50">({rate.toFixed(2)}%)</p>
         )}
       </div>
     </div>
@@ -2882,7 +3967,7 @@ function StatRow({ label, value, highlight = false, color }: { label: string, va
   return (
     <tr className={cn(highlight ? "bg-bento-accent/5" : "")}>
       <td className="px-5 py-4 font-bold text-bento-subtext">{label}</td>
-      <td className={cn("px-5 py-4 text-right font-mono tabular-nums text-lg", highlight ? "font-black text-bento-accent" : "font-bold text-bento-text", color && colorMap[color])}>
+      <td className={cn("px-5 py-4 text-right font-sans tabular-nums text-lg", highlight ? "font-black text-bento-accent" : "font-bold text-bento-text", color && colorMap[color])}>
         {value}
       </td>
     </tr>

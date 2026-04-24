@@ -72,4 +72,22 @@
   - **Exam Session**: Thiết lập số lần thi hiện tại (1, 2, 3...). Nếu đặt là `1`, tab "SO SÁNH LẦN TRƯỚC" tự động bị ẩn/mờ.
   - **Comparison Selection**: Cho phép chọn chính xác 2 lần thi từ danh sách (1-4) để so sánh trong tab Lịch sử.
   - **Group Visibility**: Nút gạt (CÓ/KHÔNG) để kiểm soát việc người dùng thông thường có được xem dữ liệu "SO SÁNH CỤM" hay không.
+  - **2025 Comparison Visibility**: Nút gạt (CÓ/KHÔNG) để tắt/mở mục "SO SÁNH KHÁC" trên menu chính.
 - **Persistence**: Tất cả cấu hình được lưu tại Firestore (`config/app`) và đồng bộ thời gian thực.
+
+## SO SÁNH KHÁC (Thông tin Năm 2025)
+- **Title**: SO SÁNH THÔNG TIN NĂM 2025.
+- **Sub-features**:
+  1. **SO SÁNH TRUNG BÌNH ĐIỂM THI CÁC MÔN**.
+  2. **SO SÁNH KẾT QUẢ HỌC TẬP**:
+     - Tiêu đề: "DANH SÁCH HỌC SINH CÓ KẾT QUẢ HỌC TẬP THẤP NHẤT".
+     - Chức năng: Chỉ có IMPORT và CẬP NHẬT. Không hiển thị bộ lọc lớp và nút xuất Excel.
+  3. **DANH SÁCH HỌC SINH CÓ NGUY CƠ**:
+     - Tiêu đề: "DANH SÁCH HỌC SINH CÓ NGUY CƠ".
+     - Chức năng: Đầy đủ IMPORT, CẬP NHẬT, CHỌN LỚP, và XUẤT EXCEL.
+     - Số thứ tự (TT): Phải đánh lại từ 1 khi áp dụng bộ lọc lớp.
+- **Định dạng chung**:
+  - Con số: Luôn hiển thị chính xác 2 chữ số thập phân (ví dụ: `6.90`, `6.00`).
+  - Cột LỆCH 1: Số dương màu xanh, số âm màu đỏ.
+  - Cột LỆCH 2: Số dương màu đỏ, số âm màu xanh.
+- **Visibility**: Điều khiển bởi cấu hình hệ thống (Admin). Nếu tắt, menu sẽ bị làm mờ và không thể truy cập.
